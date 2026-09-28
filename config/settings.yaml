@@ -1,0 +1,13 @@
+project:
+  name: ai-equity-agent
+  architecture_version: "1.11"
+
+exchange: NSE
+
+paths:
+  data_dir: data
+  database: data/equity.duckdb
+
+logging:
+  level: INFO
+  file: logs/app.log
