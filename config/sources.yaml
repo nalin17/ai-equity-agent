@@ -1,0 +1,49 @@
+# Source Registry declarations (architecture Section 4, 40B step 2).
+# Human-owned. Every source must be declared here before its data is used.
+# These are declarations only - no data is downloaded yet.
+
+sources:
+  - source_id: nse_bhavcopy_equity
+    provider: NSE
+    data_type: daily equity prices (open, high, low, close, volume)
+    endpoint: https://www.nseindia.com/all-reports (CM bhavcopy)
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: daily, after market close
+    historical_coverage: to be confirmed at ingestion (Stage 7)
+    latency: same evening
+    revision_policy: rarely revised; any revision is stored as a new version
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public download)
+    schema_description: one row per symbol and series per trading day
+
+  - source_id: nse_corporate_actions
+    provider: NSE
+    data_type: corporate actions (splits, bonuses, dividends, rights)
+    endpoint: https://www.nseindia.com/companies-listing/corporate-filings-actions
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: as announced
+    historical_coverage: to be confirmed at ingestion
+    latency: same day as announcement
+    revision_policy: amendments published as new announcements
+    timestamp_semantics: effective_date
+    reliability_rating: A
+    authentication_method: none (public download)
+    schema_description: one row per action with symbol, type, ratio or amount, ex-date
+
+  - source_id: nse_index_constituents
+    provider: NSE Indices
+    data_type: index membership (e.g. NIFTY 50, NIFTY 500)
+    endpoint: https://www.niftyindices.com
+    authority: primary
+    license: NSE Indices terms of use - check before redistribution
+    update_frequency: on index reconstitution (semi-annual plus ad hoc)
+    historical_coverage: current list only; history must be rebuilt from change notices
+    latency: announced ahead of effective date
+    revision_policy: changes published as reconstitution notices
+    timestamp_semantics: effective_date
+    reliability_rating: A
+    authentication_method: none (public download)
+    schema_description: one row per index constituent with effective dates

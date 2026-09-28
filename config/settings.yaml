@@ -6,7 +6,7 @@ exchange: NSE
 
 paths:
   data_dir: data
-  database: data/equity.duckdb
+  database: data/equity.sqlite
 
 logging:
   level: INFO
