@@ -3,8 +3,10 @@
 40A item 5: the schema migrates from empty and rolls back cleanly.
 40B step 2: every source declares authority, schema, frequency, timestamp
 semantics and reliability - otherwise it is refused.
+4F.2: excluded source classes (private tip channels etc.) are refused.
 """
 import pytest
+import yaml
 
 from core.database import connect, current_version, migrate, rollback
 from ingestion.source_registry import (
@@ -30,6 +32,7 @@ def good_source(**changes):
         "source_id": "test_source",
         "provider": "Test",
         "data_type": "prices",
+        "source_class": "exchange_official",
         "endpoint": "https://example.com",
         "authority": "primary",
         "license": "test",
@@ -97,6 +100,21 @@ def test_invalid_timestamp_semantics_is_refused(conn):
         register_source(conn, good_source(timestamp_semantics="whenever"))
 
 
+@pytest.mark.parametrize(
+    "excluded", ["private_tip_channel", "unattributed_rumour", "non_public_information"]
+)
+def test_excluded_source_class_is_refused(conn, excluded):
+    # Architecture 4F.2: excluded, not down-weighted.
+    with pytest.raises(SourceRegistryError, match="excluded source class"):
+        register_source(conn, good_source(source_class=excluded))
+    assert list_sources(conn) == []
+
+
+def test_unknown_source_class_is_refused(conn):
+    with pytest.raises(SourceRegistryError):
+        register_source(conn, good_source(source_class="whatsapp_group"))
+
+
 def test_unknown_field_is_refused(conn):
     with pytest.raises(SourceRegistryError):
         register_source(conn, good_source(colour="blue"))
@@ -118,3 +136,14 @@ def test_project_sources_file_is_valid(conn):
     added = sync_sources(conn)
     assert len(added) == len(load_sources_file()) >= 3
     assert sync_sources(conn) == []  # second sync adds nothing
+
+
+def test_file_that_drifts_from_registry_is_refused(conn, tmp_path):
+    sync_sources(conn)
+    changed = load_sources_file()
+    changed[0]["reliability_rating"] = "D"
+    edited = tmp_path / "sources.yaml"
+    edited.write_text(yaml.safe_dump({"sources": changed}), encoding="utf-8")
+    with pytest.raises(SourceRegistryError, match="differs from the registry"):
+        sync_sources(conn, edited)
+    assert get_source(conn, changed[0]["source_id"])["reliability_rating"] == "A"

@@ -1,0 +1,17 @@
+stage: "02 - Database and Source Registry"
+status: ACCEPTED_SOURCE_REGISTRY_BASELINE
+architecture: [4 Source Registry, 4F.2, 40A item 5, 40B step 2, 45]
+proven:
+  - Schema migrates from empty and rolls back cleanly (tested)
+  - Every source declares authority, schema, frequency, timestamp semantics, reliability and source class (tested)
+  - Excluded source classes are refused (tested, added in Stage 3)
+  - 3 NSE sources declared in config/sources.yaml
+not_claimed:
+  any data downloaded: false
+  DuckDB or PostgreSQL in use (see ADR-001): false
+  injection attempts tracked against source reliability (4D.1 rule 4): false
+negative_assertions:
+  incomplete source registered: false
+  duplicate source overwritten: false
+  excluded source class registered: false
+  registry silently drifted from sources file: false

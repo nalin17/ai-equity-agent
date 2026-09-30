@@ -7,3 +7,5 @@ data/
 *.duckdb
 *.parquet
 logs/
+test_output.txt
+git_status.txt

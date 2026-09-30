@@ -1,0 +1,24 @@
+stage: "03 - Company identity and missing-data classes"
+status: ACCEPTED_IDENTITY_BASELINE
+architecture: [4 Entity Resolution, 4C, 6D (partial), 2A, 40D, 40D.1]
+proven:
+  - ISIN is the primary key; shape and check digit validated (tested on 4 real ISINs)
+  - Symbols, codes and names are date-ranged aliases; resolver returns exactly one entity or raises (tested)
+  - Symbol changes and ISIN changes are dated events, never overwrites (tested)
+  - Six missing-data classes defined once; a null without a class is rejected (tested)
+  - Capability status vocabulary (2A) and acceptance records checked by tests
+  - Tests run on GitHub on every push (CI)
+not_claimed:
+  event-scoped identity bridges for corporate actions (6D): false
+  real NSE companies loaded: false
+  point-in-time universe membership or delistings (6A.1): false
+  facts stored with missing-data classes (needs the fact store): false
+  missing-data rate monitoring (4C rule 5): false
+negative_assertions:
+  entity overwritten: false
+  fuzzy name match accepted: false
+  ambiguous identifier guessed: false
+  old and new ISIN treated as the same security: false
+  partial write left behind by a failed symbol change: false
+  null stored without a missing-data class: false
+  extraction_failure silently reclassified as not_disclosed: false

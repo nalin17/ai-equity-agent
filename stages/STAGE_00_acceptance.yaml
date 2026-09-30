@@ -1,0 +1,12 @@
+stage: "00 - Setup"
+status: CLOSED
+architecture: [40 Phase A items 1-2]
+proven:
+  - Git repository on GitHub with main branch
+  - Python virtual environment, excluded from Git
+  - Architecture document stored in docs/
+not_claimed:
+  continuous integration: false
+negative_assertions:
+  virtual environment pushed to GitHub: false
+  secrets committed: false

@@ -1,10 +1,13 @@
 # Source Registry declarations (architecture Section 4, 40B step 2).
 # Human-owned. Every source must be declared here before its data is used.
 # These are declarations only - no data is downloaded yet.
+# Excluded source classes (architecture 4F.2) are refused by the code:
+#   private_tip_channel, unattributed_rumour, non_public_information
 
 sources:
   - source_id: nse_bhavcopy_equity
     provider: NSE
+    source_class: exchange_official
     data_type: daily equity prices (open, high, low, close, volume)
     endpoint: https://www.nseindia.com/all-reports (CM bhavcopy)
     authority: primary
@@ -20,6 +23,7 @@ sources:
 
   - source_id: nse_corporate_actions
     provider: NSE
+    source_class: exchange_official
     data_type: corporate actions (splits, bonuses, dividends, rights)
     endpoint: https://www.nseindia.com/companies-listing/corporate-filings-actions
     authority: primary
@@ -35,6 +39,7 @@ sources:
 
   - source_id: nse_index_constituents
     provider: NSE Indices
+    source_class: index_provider
     data_type: index membership (e.g. NIFTY 50, NIFTY 500)
     endpoint: https://www.niftyindices.com
     authority: primary

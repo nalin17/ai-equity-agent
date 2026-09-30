@@ -1,8 +1,8 @@
-"""Source Registry (architecture Section 4 and 40B step 2).
+"""Source Registry (architecture Section 4, 4F.2 and 40B step 2).
 
 Every data source must be declared before any data from it is used. A source
 that does not declare all required fields is refused. Nothing is guessed and
-nothing is silently overwritten.
+nothing is silently overwritten. Some source classes are excluded outright.
 """
 from pathlib import Path
 
@@ -17,6 +17,7 @@ REQUIRED_FIELDS = (
     "source_id",
     "provider",
     "data_type",
+    "source_class",
     "endpoint",
     "authority",
     "license",
@@ -31,6 +32,15 @@ REQUIRED_FIELDS = (
 )
 
 ALLOWED_VALUES = {
+    "source_class": {
+        "exchange_official",   # NSE / BSE publications
+        "regulator_official",  # SEBI, RBI
+        "index_provider",      # NSE Indices
+        "company_filing",      # documents filed by the company itself
+        "licensed_vendor",     # paid data vendor under licence
+        "news_publisher",      # attributable news outlet
+        "public_social",       # public posts (restricted domain, 4B)
+    },
     # primary = the original publisher (e.g. the exchange itself)
     "authority": {"primary", "secondary", "vendor"},
     # snapshot_no_vintage = only today's value is available; such fields are
@@ -40,9 +50,16 @@ ALLOWED_VALUES = {
     "reliability_rating": {"A", "B", "C", "D"},
 }
 
+# Architecture 4F.2: excluded, not down-weighted. These can never be registered.
+EXCLUDED_SOURCE_CLASSES = {
+    "private_tip_channel",          # messaging-group forwards, tip services
+    "unattributed_rumour",          # "sources say" material with no named source
+    "non_public_information",       # anything claiming pre-announcement inside information
+}
+
 
 class SourceRegistryError(Exception):
-    """A source declaration is incomplete, invalid, duplicated or unknown."""
+    """A source declaration is incomplete, invalid, excluded, duplicated or unknown."""
 
 
 def validate_source(source):
@@ -55,6 +72,11 @@ def validate_source(source):
     if unknown:
         raise SourceRegistryError(
             f"Source '{source['source_id']}' has unknown fields: {unknown}"
+        )
+    if source["source_class"] in EXCLUDED_SOURCE_CLASSES:
+        raise SourceRegistryError(
+            f"Source '{source['source_id']}': source_class '{source['source_class']}' "
+            "is an excluded source class (architecture 4F.2) and can never be registered"
         )
     for field, allowed in ALLOWED_VALUES.items():
         if source[field] not in allowed:
@@ -101,11 +123,24 @@ def load_sources_file(path=SOURCES_FILE):
 
 
 def sync_sources(conn, path=SOURCES_FILE):
-    """Register every source in the file that is not registered yet."""
+    """Register every source in the file that is not registered yet.
+
+    A source that is already registered must still match the file exactly.
+    If they disagree, stop: the registry and the file never silently drift.
+    """
     all_sources = load_sources_file(path)
     for source in all_sources:
         validate_source(source)  # check the whole file before writing anything
     registered = set(list_sources(conn))
+    for source in all_sources:
+        if source["source_id"] in registered:
+            stored = get_source(conn, source["source_id"])
+            changed = [f for f in REQUIRED_FIELDS if str(stored[f]) != str(source[f])]
+            if changed:
+                raise SourceRegistryError(
+                    f"Source '{source['source_id']}' in the file differs from the registry "
+                    f"in {changed}. Registrations are never silently changed."
+                )
     added = []
     for source in all_sources:
         if source["source_id"] not in registered:
