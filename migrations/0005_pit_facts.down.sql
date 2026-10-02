@@ -1,0 +1,12 @@
+DROP TRIGGER price_provenance_no_delete;
+DROP TRIGGER price_provenance_no_update;
+DROP TRIGGER quarantine_no_delete;
+DROP TRIGGER quarantine_no_update;
+DROP TRIGGER trusted_prices_no_delete;
+DROP TRIGGER trusted_prices_no_update;
+DROP TRIGGER raw_artifacts_no_delete;
+DROP TRIGGER raw_artifacts_no_update;
+DROP TRIGGER pit_facts_no_delete;
+DROP TRIGGER pit_facts_no_update;
+DROP INDEX idx_pit_facts_key;
+DROP TABLE pit_facts;

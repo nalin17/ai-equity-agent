@@ -1,0 +1,27 @@
+stage: "05 - Point-in-time facts and provenance"
+status: ACCEPTED_POINT_IN_TIME_FACTS_BASELINE
+architecture: [5, 5B, 4C, 47A guardrail 2, 40A items 11-12, 40B step 4, ADR-002]
+proven:
+  - A fact corrected a week later still returns the original value when asked as of an earlier date (tested)
+  - Corrections are new versions that cite evidence; the database refuses UPDATE and DELETE on history (tested)
+  - Stage 4 tables (raw files, trusted prices, quarantine, provenance) are now append-only too (tested)
+  - A null without a missing-data class is refused by the code and by the database (tested)
+  - A different value without a declared correction is refused as a conflict (tested)
+  - Consolidated and standalone facts are kept apart; basis is explicit on every fact (tested)
+  - Replay needs proven publication; an unproven later correction makes the answer AVAILABILITY_REVIEW (tested)
+  - Every fact resolves to the SHA-256 of its raw file (tested)
+not_claimed:
+  real filings ingested: false
+  price corrections routed through the point-in-time store: false
+  numeric tolerance when comparing values: false
+  unit conversion as a declared transformation (30B.3): false
+  learned artifacts filtered by knowledge_effective_from (6B): false
+  historical replay readiness: false
+negative_assertions:
+  original value changed by a correction: false
+  history updated or deleted: false
+  null stored without a missing-data class: false
+  conflict resolved by taking the newest value: false
+  correction accepted without evidence: false
+  correction known before the value it corrects: false
+  unproven availability treated as eligible: false
