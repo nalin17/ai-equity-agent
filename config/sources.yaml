@@ -52,3 +52,19 @@ sources:
     reliability_rating: A
     authentication_method: none (public download)
     schema_description: one row per index constituent with effective dates
+
+  - source_id: nse_equity_list
+    provider: NSE
+    source_class: exchange_official
+    data_type: list of securities available for trading in the equity segment (EQUITY_L.csv)
+    endpoint: https://www.nseindia.com/market-data/securities-available-for-trading
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: daily snapshot
+    historical_coverage: current snapshot only - no history
+    latency: same day
+    revision_policy: replaced by NSE every day; each download is kept as its own raw file
+    timestamp_semantics: snapshot_no_vintage
+    reliability_rating: A
+    authentication_method: none (manual browser download)
+    schema_description: one row per listed security - symbol, company name, series, listing date, ISIN

@@ -1,0 +1,9 @@
+DROP TRIGGER entity_list_rejections_no_delete;
+DROP TRIGGER entity_list_rejections_no_update;
+DROP TRIGGER entity_list_loads_no_delete;
+DROP TRIGGER entity_list_loads_no_update;
+DROP TRIGGER adapter_runs_no_delete;
+DROP TRIGGER adapter_runs_no_update;
+DROP TABLE entity_list_rejections;
+DROP TABLE entity_list_loads;
+DROP TABLE adapter_runs;

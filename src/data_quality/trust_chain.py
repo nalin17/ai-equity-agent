@@ -159,7 +159,23 @@ def read_price_file(file_path):
 
 def ingest_price_file(conn, source_id, file_path, retrieved_at,
                       published_at=None, publication_evidence=None, raw_dir=None):
-    """Run a canonical price file through the trust chain. Returns a report dict.
+    """Run a canonical price file through the trust chain. Returns a report dict."""
+    get_source(conn, source_id)  # unregistered sources are refused
+    rows = read_price_file(file_path)  # raises before anything is stored
+    records = [(row_number, row, row) for row_number, row in enumerate(rows, start=2)]
+    return ingest_records(conn, source_id, file_path, records, retrieved_at,
+                          published_at, publication_evidence, raw_dir)
+
+
+def ingest_records(conn, source_id, raw_file_path, records, retrieved_at,
+                   published_at=None, publication_evidence=None, raw_dir=None, on_run=None):
+    """Run records already mapped by an adapter through the trust chain.
+
+    records: (row number in the raw file, the row exactly as received, the same
+    row in the canonical format). The RAW file is what is stored and hashed, so
+    provenance points at the bytes the provider published, and quarantine keeps
+    the row exactly as received. on_run(conn, run_id), if given, records extra
+    details inside the same transaction.
 
     Everything happens in one transaction: either the whole file is recorded
     (trusted rows, quarantined rows, provenance) or nothing is.
@@ -167,15 +183,16 @@ def ingest_price_file(conn, source_id, file_path, retrieved_at,
     get_source(conn, source_id)  # unregistered sources are refused
     retrieved = parse_timestamp(retrieved_at)
     published = parse_timestamp(published_at) if published_at is not None else None
-    rows = read_price_file(file_path)  # raises before anything is stored
+    if not records:
+        raise NoDataError(f"{raw_file_path}: no records - nothing is stored")
 
     def work(c):
-        artifact_id, sha = store_raw_artifact(c, source_id, file_path, retrieved_at,
+        artifact_id, sha = store_raw_artifact(c, source_id, raw_file_path, retrieved_at,
                                               published_at, publication_evidence, raw_dir)
         run_id = c.execute(
             "INSERT INTO ingestion_runs (artifact_id, pipeline_version, rows_total, rows_trusted,"
             " rows_duplicate, rows_quarantined, recorded_at) VALUES (?, ?, ?, 0, 0, 0, ?)",
-            [artifact_id, PIPELINE_VERSION, len(rows), now_utc()],
+            [artifact_id, PIPELINE_VERSION, len(records), now_utc()],
         ).lastrowid
         counts = {"trusted": 0, "duplicate": 0, "quarantined": 0}
         by_stage = {}
@@ -191,9 +208,9 @@ def ingest_price_file(conn, source_id, file_path, retrieved_at,
 
         # Stages 1-3, row by row. Row numbers count the header as line 1.
         passed = []
-        for row_number, row in enumerate(rows, start=2):
+        for row_number, row, canonical in records:
             try:
-                rec = check_schema_and_type(row)
+                rec = check_schema_and_type(canonical)
                 check_timestamp(rec, retrieved, published)
                 check_entity(c, rec)
             except RecordRejected as r:
@@ -253,11 +270,13 @@ def ingest_price_file(conn, source_id, file_path, retrieved_at,
             " WHERE run_id = ?",
             [counts["trusted"], counts["duplicate"], counts["quarantined"], run_id],
         )
+        if on_run is not None:
+            on_run(c, run_id)
         return {
             "run_id": run_id,
             "artifact_id": artifact_id,
             "sha256": sha,
-            "rows_total": len(rows),
+            "rows_total": len(records),
             "rows_trusted": counts["trusted"],
             "rows_duplicate": counts["duplicate"],
             "rows_quarantined": counts["quarantined"],

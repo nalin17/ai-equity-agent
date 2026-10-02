@@ -1,0 +1,24 @@
+stage: "07A - NSE market data adapters and equity list"
+status: PROTOTYPE
+architecture: [40A item 7, 40B step 6 (first half), 40G.2, 5A.1, 5B.2, ADR-002]
+proven:
+  - Both NSE bhavcopy formats (legacy and UDiFF) give identical trusted prices for the same day (tested)
+  - A new provider is added without changing any downstream module (tested)
+  - Provider column names exist only in the adapter module (static test)
+  - An unrecognised or changed file format fails loudly and stores nothing (tested)
+  - Adapters translate, never repair; untranslatable values are quarantined as received (tested)
+  - The raw NSE file (csv or zip) is what is stored and hashed; provenance points at its line numbers (tested)
+  - The NSE equity list adds new companies but never overwrites or guesses; rejections are recorded (tested)
+not_claimed:
+  real NSE files ingested end to end: false
+  corporate-action adjustment (Stage 7B): false
+  historical symbol changes loaded: false
+  delisted companies loaded: false
+  research universe of 100 or more securities built from real data: false
+  automated download: false
+negative_assertions:
+  provider-specific logic outside the adapter: false
+  unknown format partially read: false
+  value repaired by an adapter: false
+  known company overwritten by a snapshot: false
+  half-written rejected row: false
