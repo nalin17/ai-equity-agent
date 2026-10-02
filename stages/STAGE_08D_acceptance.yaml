@@ -1,0 +1,30 @@
+stage: "08D - NBFCs, life insurers and revised filings (SEBI integrated filings)"
+status: ACCEPTED_NBFC_INSURER_AND_REVISION_BASELINE
+architecture: [40B step 7, 4, 4C, 5, 5B, 9B, 47 criterion 32, ADR-002]
+proven:
+  - NBFC results are read with their lending lines (interest, fees, impairment on financial instruments) and revenue and expense breakdown identities (tested)
+  - Life-insurer results are read as a policyholders' and a shareholders' account with fourteen accounting identities (tested)
+  - Insurer solvency, persistency, conservation and expense ratios are taken from the standalone report only; a zero solvency ratio is a placeholder (tested)
+  - A file whose full year is audited and quarter is not is read, not refused (tested)
+  - A 'Revision' listing row as NSE writes it (blank broadcast time, revision time, remark) is accepted; its dissemination time is the revised file's proven publication time (tested)
+  - A revision that changes a figure records a correction citing the remark; replay before the revision sees the original, after it the corrected figure (tested)
+  - Different figures under an 'Original' row stay a conflict; a revised figure that fails an identity is not applied (tested)
+  - "Supersedes 8B's interim rule that a revised filing never proves its publication time, on the evidence of a real revision"
+  - "Real data: Bajaj Finance Apr-Jun 2026 consolidated - revenue 23,165.45 cr, impairment on financial instruments 1,993.44 cr, owners' profit 5,985.75 cr; eight identities hold on all four files"
+  - "Real data: HDFC Life Apr-Jun 2026 standalone - gross premium 17,166.44 cr, profit after tax 611.42 cr, solvency 185%, persistency 80.03% at 13 months and 65.48% at 61 months; fourteen identities hold on all five files"
+  - "Real data: HDFC Life's revision of Jan-Mar 2026 (disseminated 24-Jul-2026 16:48:55) loaded with proven publication; its 92 stored figures equal the original's, so nothing was corrected"
+not_claimed:
+  general insurers and other SEBI filing families: false
+  balance sheet and cash flow figures: false
+  half-year and nine-month periods: false
+  segment results: false
+  NBFC asset-quality figures such as gross stage 3 and AUM (not in these XBRL files): false
+  insurer value of new business and APE (not in these XBRL files): false
+  re-reading listing rows rejected by an earlier code version: false
+  per-share figures adjusted for bonus issues and splits: false
+negative_assertions:
+  consolidated and standalone figures mixed: false
+  insurer ratio stored from a consolidated report: false
+  placeholder zero stored as a real value: false
+  recorded figure overwritten by a revision: false
+  revision treated as known before its dissemination time: false

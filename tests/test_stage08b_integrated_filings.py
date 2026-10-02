@@ -232,7 +232,7 @@ def test_the_files_own_isin_must_be_the_companys(env):
 
 
 @pytest.mark.parametrize("kwargs, message", [
-    ({"family": "NBFC"}, "'NBFC' companies is not supported yet"),
+    ({"family": "GI"}, "'GI' companies is not supported yet"),
     ({"name": "Some Other Bank Limited"}, "registry has"),
     ({"symbol": "NOSUCH"}, "not attached"),
 ])
@@ -270,23 +270,11 @@ def test_integrated_listing_proves_publication_time(env):
                  claim=PitClaim.HISTORICAL_REPLAY).availability == Availability.ELIGIBLE
 
 
-def test_a_revised_filing_never_proves_publication_time(env):
-    c, load, load_listing = env
-    load_listing("CF-Integrated.csv", if_listing([
-        ("INTEGRATED_FILING_BANKING_9.xml", "Standalone", "30-JUN-2026", "18-Jul-2026 16:01:37", "Revised",
-         "25-Jul-2026 10:00:00")]))
-    report = load("INTEGRATED_FILING_BANKING_9.xml", ifxbrl())
-    assert not report["publication_proven"]
-    assert any(p.startswith("publication_not_proven") for p in report["problems"])
-    assert value(c, "net_profit_owners_3m", "standalone", when="2026-09-01T00:00:00+05:30",
-                 claim=PitClaim.HISTORICAL_REPLAY).availability == Availability.AVAILABILITY_REVIEW
-
-
 def test_integrated_listing_rows_that_cannot_be_trusted_are_rejected(env):
     c, _, load_listing = env
     report = load_listing("CF-Integrated.csv", if_listing([
         ("INTEGRATED_FILING_BANKING_1.xml", "Standalone", "30-JUN-2026", "18-Jul-2026 16:01:37", "Original", ""),
-        ("INTEGRATED_FILING_BANKING_2.xml", "Standalone", "30-JUN-2026", "18-Jul-2026 16:01:37", "Revised", ""),
+        ("INTEGRATED_FILING_BANKING_2.xml", "Standalone", "30-JUN-2026", "18-Jul-2026 16:01:37", "Revision", ""),
         ("INTEGRATED_FILING_BANKING_3.xml", "Standalone", "30-JUN-2026", "18-Jul-2026 16:01:37", "Draft", ""),
         ("INTEGRATED_FILING_BANKING_4.xml", "Partly", "30-JUN-2026", "18-Jul-2026 16:01:37", "Original", ""),
         ("INTEGRATED_FILING_BANKING_5.xml", "Standalone", "30-JUN-2026", "18-Jul-2099 16:01:37", "Original", ""),

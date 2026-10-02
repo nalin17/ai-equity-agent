@@ -322,7 +322,8 @@ def report(args):
     print(f"Identity bridges (6D):     {one('SELECT COUNT(*) FROM identity_bridges')}")
     print(f"Results filings listed:    {one('SELECT COUNT(*) FROM fr_filings')} (old page)"
           f" + {one('SELECT COUNT(*) FROM if_filings')} (integrated filing)")
-    print(f"Results files loaded:      {one('SELECT COUNT(*) FROM fr_loads')}")
+    print(f"Results files loaded:      {one('SELECT COUNT(*) FROM fr_loads')}"
+          f"  (figures corrected by revisions: {one('SELECT COALESCE(SUM(facts_corrected), 0) FROM fr_loads')})")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(

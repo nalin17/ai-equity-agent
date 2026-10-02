@@ -5,7 +5,7 @@ NSE publishes results in two places, and both are read here:
     and INDAS_*.xml files in BSE's Ind AS taxonomy - non-financial companies only;
   - the 'Integrated Filing - Financials' page (quarters ended March 2025 onwards, SEBI
     format): listing CF-Integrated-Filing-*.csv and INTEGRATED_FILING_*.xml files -
-    Ind AS companies and banks.
+    Ind AS companies, banks, NBFCs and life insurers.
 Load a listing before its XBRL files: the listing holds the proven publication time (5B).
 
 Rules, each found on NSE's real files:
@@ -19,13 +19,17 @@ Rules, each found on NSE's real files:
     no passing identity confirms is stored as missing: source_conflict (4C).
   - The company is found by NSE symbol as of the period end and its name must match the
     registry; in the SEBI format the file's own ISIN must also be that company's ISIN.
-  - Bank asset-quality, capital and return ratios are measures of the bank itself: they are
-    taken from the standalone report only (consolidated reports carry placeholder zeros).
-  - Paid-up capital, face value and CET1 can never be zero or negative: such a value is a
-    placeholder and is not stored.
+  - Regulatory ratios - bank asset quality, capital and return; insurer solvency, persistency
+    and expense ratios - are measures of the regulated company itself: they are taken from
+    the standalone report only (consolidated reports carry placeholder zeros or copies).
+  - Paid-up capital, face value, CET1 and solvency can never be zero or negative: such a
+    value is a placeholder and is not stored.
   - Units are checked (INR, INR per share, ratio); values are stored as filed.
-  - A listing row marked 'Revised' does not prove a publication time: no revised filing
-    has been checked on real data yet, so it fails closed (5B).
+  - A listing row marked 'Revision' (seen on real data: HDFC Life, 24-Jul-2026) has no
+    broadcast time; its dissemination time is when the revised file became public, and is
+    its proven publication time. A figure the revision changes is recorded as a correction
+    citing the revision remark, so history still shows the original until then (5).
+    Different figures under an 'Original' row remain a conflict - never resolved by recency.
 Nothing here is ever repaired; every skipped item is recorded with a reason.
 """
 import re
@@ -44,7 +48,7 @@ from ingestion.market_adapters import AdapterError, read_raw_table
 from ingestion.nse_corporate_actions import normalise_name
 from ingestion.source_registry import get_source
 from provenance.availability import parse_timestamp
-from provenance.pit_store import PitConflictError, record_fact
+from provenance.pit_store import PitConflictError, PitError, record_correction, record_fact
 from provenance.raw_store import store_raw_artifact
 from universe.entities import EntityError, resolve
 
@@ -69,11 +73,11 @@ IF_INDEX_COLUMNS = ("SYMBOL", "COMPANY NAME", "QUARTER END DATE", "TYPE OF SUBMI
 INDEX_TIME_FORMAT = "%d-%b-%Y %H:%M:%S"   # e.g. 30-Jul-2026 17:18:42, India time
 LISTING_BASIS = {"Consolidated": "consolidated", "Non-Consolidated": "standalone"}
 IF_LISTING_BASIS = {"Consolidated": "consolidated", "Standalone": "standalone"}
-SUBMISSION_TYPES = {"Original", "Revised"}
+SUBMISSION_TYPES = {"Original", "Revision"}
 FILE_BASIS = {"consolidated": "consolidated", "standalone": "standalone"}
 UNIT_MEASURES = {"INR": "iso4217:INR", "INR_per_share": "iso4217:INR/xbrli:shares", "ratio": "xbrli:pure"}
 DURATIONS = {3: "3m", 12: "12m"}
-MUST_BE_POSITIVE = {"paid_up_equity_capital", "face_value_per_share", "cet1_ratio"}
+MUST_BE_POSITIVE = {"paid_up_equity_capital", "face_value_per_share", "cet1_ratio", "solvency_ratio"}
 
 # XBRL element -> (our field, unit), one map per format family.
 INDAS_FIELDS = {
@@ -137,6 +141,85 @@ BANK_FIELDS = {
 }
 BANK_STANDALONE_ONLY = frozenset({"gross_npa", "net_npa", "gross_npa_ratio", "net_npa_ratio", "cet1_ratio",
                                   "return_on_assets"})
+NBFC_FIELDS = {**INDAS_FIELDS,
+    "InterestEarned": ("interest_earned", "INR"),
+    "DividendIncome": ("dividend_income", "INR"),
+    "RentalIncome": ("rental_income", "INR"),
+    "FeesAndCommissionIncome": ("fees_and_commission_income", "INR"),
+    "NetGainOnFairValueChanges": ("net_gain_on_fair_value_changes", "INR"),
+    "NetGainOnDerecognitionOfFinancialInstrumentsUnderAmortisedCostCategory": ("net_gain_on_derecognition", "INR"),
+    "RevenueFromSaleOfProduct": ("sale_of_products", "INR"),
+    "RevenueFromSaleOfServices": ("sale_of_services", "INR"),
+    "OtherRevenueFromOperations": ("other_revenue_from_operations", "INR"),
+    "CostOfMaterialsConsumed": ("cost_of_materials", "INR"),
+    "PurchasesOfStockInTrade": ("purchases_of_stock_in_trade", "INR"),
+    "ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade": ("changes_in_inventories", "INR"),
+    "EmployeeBenefitExpense": ("employee_cost", "INR"),
+    "FeesAndCommissionExpense": ("fees_and_commission_expense", "INR"),
+    "NetLossOnFairValueChanges": ("net_loss_on_fair_value_changes", "INR"),
+    "NetLossOnDerecognitionOfFinancialInstrumentsUnderAmortisedCostCategory": ("net_loss_on_derecognition", "INR"),
+    "ImpairmentOnFinancialInstruments": ("impairment_on_financial_instruments", "INR"),
+    "OtherExpenses": ("other_expenses", "INR"),
+}
+LI_FIELDS = {   # life insurers: policyholders' (revenue) account, then shareholders' account
+    "IncomeFirstYearPremium": ("first_year_premium", "INR"),
+    "IncomeRenewalPremium": ("renewal_premium", "INR"),
+    "IncomeSinglePremium": ("single_premium", "INR"),
+    "GrossPremiumIncome": ("gross_premium", "INR"),
+    "NetPremiumIncome": ("net_premium", "INR"),
+    "IncomeFromInvestmentsNet": ("policyholders_investment_income", "INR"),
+    "PolicyholdersAccountOtherIncome": ("policyholders_other_income", "INR"),
+    "TransferOfFundsFromShareholdersAccount": ("transfer_from_shareholders", "INR"),
+    "Income": ("policyholders_total_income", "INR"),
+    "CommissionFirstYearPremium": ("commission_first_year", "INR"),
+    "CommissionRenewalPremium": ("commission_renewal", "INR"),
+    "CommissionSinglePremium": ("commission_single", "INR"),
+    "Commission": ("commission", "INR"),
+    "NetCommission": ("net_commission", "INR"),
+    "EmployeesRemunerationAndWelfareExpenses": ("employee_cost", "INR"),
+    "AdministrationExpenses": ("administration_expenses", "INR"),
+    "AdvertisementAndPublicity": ("advertisement_and_publicity", "INR"),
+    "OtherOperatingExpenses": ("other_operating_expenses", "INR"),
+    "OperatingExpensesRelatedToInsuranceBusiness": ("operating_expenses", "INR"),
+    "ExpensesOfManagement": ("expenses_of_management", "INR"),
+    "ProvisionsForDoubtfulDebtsIncludingBadDebtsWrittenOff": ("policyholders_provision_doubtful_debts", "INR"),
+    "ProvisionsForDiminutionInValueOfInvestments": ("policyholders_provision_investments", "INR"),
+    "GoodsAndServiceTaxChargeOnLinkedCharges": ("gst_on_linked_charges", "INR"),
+    "ProvisionForTax": ("policyholders_tax", "INR"),
+    "BenefitsPaidNet": ("benefits_paid", "INR"),
+    "ChangeInActuarialLiability": ("change_in_actuarial_liability", "INR"),
+    "Expenses": ("policyholders_total_expenses", "INR"),
+    "NetSurplusDeficit": ("policyholders_surplus", "INR"),
+    "TransferredToShareholdersAccount": ("transfer_to_shareholders", "INR"),
+    "FundsForFutureAppropriation": ("funds_for_future_appropriation", "INR"),
+    "TransferFromPolicyholdersAccount": ("shareholders_transfer_from_policyholders", "INR"),
+    "InvestmentIncome": ("shareholders_investment_income", "INR"),
+    "ShareholdersAccountOtherIncome": ("shareholders_other_income", "INR"),
+    "IncomeUnderShareholdersAccount": ("shareholders_own_income", "INR"),
+    "ShareholdersAccountIncome": ("shareholders_total_income", "INR"),
+    "ExpensesOtherThanThoseRelatedToInsuranceBusiness": ("shareholders_other_expenses", "INR"),
+    "TransferOfFundsToPolicyholdersAccount": ("transfer_to_policyholders", "INR"),
+    "ProvisionsForDoubtfulDebtsIncludingWriteOff": ("shareholders_provision_doubtful_debts", "INR"),
+    "ShareholdersAccountProvisionsForDiminutionInValueOfInvestments": ("shareholders_provision_investments", "INR"),
+    "ShareholdersAccountExpenses": ("shareholders_total_expenses", "INR"),
+    "ProfitLossBeforeTax": ("profit_before_tax", "INR"),
+    "ProvisionsForTaxes": ("tax_expense", "INR"),
+    "ProfitLossAfterTaxBeforeExtraordinaryItems": ("profit_after_tax_before_extraordinary", "INR"),
+    "ExtraordinaryItemsNetOfTaxExpenses": ("extraordinary_items_deducted", "INR"),
+    "ProfitLossAfterTaxAndExtraordinaryItems": ("profit_after_tax", "INR"),
+    "BasicAndDilutedEPSAfterExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized": ("eps_basic", "INR_per_share"),
+    "SolvencyRatio": ("solvency_ratio", "ratio"),
+    "ExpensesOfManagementRatio": ("expenses_of_management_ratio", "ratio"),
+    "PersistencyRatio13ThMonth": ("persistency_13th_month", "ratio"),
+    "PersistencyRatio25ThMonth": ("persistency_25th_month", "ratio"),
+    "PersistencyRatio37ThMonth": ("persistency_37th_month", "ratio"),
+    "PersistencyRatio49ThMonth": ("persistency_49th_month", "ratio"),
+    "PersistencyRatio61ThMonth": ("persistency_61st_month", "ratio"),
+    "ConservationRatio": ("conservation_ratio", "ratio"),
+}
+LI_STANDALONE_ONLY = frozenset({"solvency_ratio", "expenses_of_management_ratio", "persistency_13th_month",
+                                "persistency_25th_month", "persistency_37th_month", "persistency_49th_month",
+                                "persistency_61st_month", "conservation_ratio"})
 
 # (name, total field, [(component field, sign)]) - checked only when every field is present.
 INDAS_IDENTITIES = [
@@ -175,6 +258,58 @@ BANK_IDENTITIES = [
      [("profit_before_minority_and_associates", 1), ("net_profit_minority", -1), ("share_of_associates", 1)]),
 ]
 
+NBFC_IDENTITIES = [i for i in INDAS_IDENTITIES if i[0] != "profit = continuing + discontinued + associates + regulatory"] + [
+    ("profit = continuing + discontinued + associates", "net_profit",
+     [("profit_from_continuing_operations", 1), ("profit_from_discontinued_operations", 1),
+      ("share_of_associates_and_jvs", 1)]),
+    ("revenue = interest + dividends + rent + fees + gains + sales + other revenue", "revenue_from_operations",
+     [("interest_earned", 1), ("dividend_income", 1), ("rental_income", 1), ("fees_and_commission_income", 1),
+      ("net_gain_on_fair_value_changes", 1), ("net_gain_on_derecognition", 1), ("sale_of_products", 1),
+      ("sale_of_services", 1), ("other_revenue_from_operations", 1)]),
+    ("expenses = materials + purchases + inventories + employees + finance + depreciation + fees + losses"
+     " + impairment + other", "total_expenses",
+     [("cost_of_materials", 1), ("purchases_of_stock_in_trade", 1), ("changes_in_inventories", 1),
+      ("employee_cost", 1), ("finance_costs", 1), ("depreciation", 1), ("fees_and_commission_expense", 1),
+      ("net_loss_on_fair_value_changes", 1), ("net_loss_on_derecognition", 1),
+      ("impairment_on_financial_instruments", 1), ("other_expenses", 1)]),
+]
+LI_IDENTITIES = [
+    ("gross premium = first year + renewal + single", "gross_premium",
+     [("first_year_premium", 1), ("renewal_premium", 1), ("single_premium", 1)]),
+    ("policyholders' income = net premium + investment income + other income + transfer from shareholders",
+     "policyholders_total_income", [("net_premium", 1), ("policyholders_investment_income", 1),
+                                    ("policyholders_other_income", 1), ("transfer_from_shareholders", 1)]),
+    ("commission = first year + renewal + single", "commission",
+     [("commission_first_year", 1), ("commission_renewal", 1), ("commission_single", 1)]),
+    ("operating expenses = employees + administration + advertisement + other", "operating_expenses",
+     [("employee_cost", 1), ("administration_expenses", 1), ("advertisement_and_publicity", 1),
+      ("other_operating_expenses", 1)]),
+    ("expenses of management = net commission + operating expenses", "expenses_of_management",
+     [("net_commission", 1), ("operating_expenses", 1)]),
+    ("policyholders' expenses = management + provisions + GST + tax + benefits + actuarial change",
+     "policyholders_total_expenses",
+     [("expenses_of_management", 1), ("policyholders_provision_doubtful_debts", 1),
+      ("policyholders_provision_investments", 1), ("gst_on_linked_charges", 1), ("policyholders_tax", 1),
+      ("benefits_paid", 1), ("change_in_actuarial_liability", 1)]),
+    ("surplus = policyholders' income - expenses", "policyholders_surplus",
+     [("policyholders_total_income", 1), ("policyholders_total_expenses", -1)]),
+    ("surplus = transfer to shareholders + funds for future appropriation", "policyholders_surplus",
+     [("transfer_to_shareholders", 1), ("funds_for_future_appropriation", 1)]),
+    ("shareholders' own income = investment income + other income", "shareholders_own_income",
+     [("shareholders_investment_income", 1), ("shareholders_other_income", 1)]),
+    ("shareholders' income = transfer from policyholders + own income", "shareholders_total_income",
+     [("shareholders_transfer_from_policyholders", 1), ("shareholders_own_income", 1)]),
+    ("shareholders' expenses = other expenses + transfer to policyholders + provisions", "shareholders_total_expenses",
+     [("shareholders_other_expenses", 1), ("transfer_to_policyholders", 1),
+      ("shareholders_provision_doubtful_debts", 1), ("shareholders_provision_investments", 1)]),
+    ("PBT = shareholders' income - expenses", "profit_before_tax",
+     [("shareholders_total_income", 1), ("shareholders_total_expenses", -1)]),
+    ("profit before extraordinary items = PBT - tax", "profit_after_tax_before_extraordinary",
+     [("profit_before_tax", 1), ("tax_expense", -1)]),
+    ("profit = profit before extraordinary items - extraordinary items", "profit_after_tax",
+     [("profit_after_tax_before_extraordinary", 1), ("extraordinary_items_deducted", -1)]),
+]
+
 
 @dataclass(frozen=True)
 class ResultsFormat:
@@ -194,6 +329,10 @@ SEBI_FORMATS = {
                            INDAS_FIELDS, INDAS_IDENTITIES),
     "Banking": ResultsFormat("SEBI Banking", IF_XBRL_SOURCE, "sebi-if-banking-1", "NameOfBank",
                              BANK_FIELDS, BANK_IDENTITIES, BANK_STANDALONE_ONLY),
+    "NBFC": ResultsFormat("SEBI NBFC", IF_XBRL_SOURCE, "sebi-if-nbfc-1", "NameOfTheCompany",
+                          NBFC_FIELDS, NBFC_IDENTITIES),
+    "LI": ResultsFormat("SEBI Life Insurance", IF_XBRL_SOURCE, "sebi-if-li-1", "NameOfTheCompany",
+                        LI_FIELDS, LI_IDENTITIES, LI_STANDALONE_ONLY),
 }
 
 
@@ -233,21 +372,27 @@ def _if_listing_row(row, retrieved):
     symbol = row["SYMBOL"].strip()
     if not symbol:
         raise ValueError("no symbol")
-    received, disseminated = _ist(row["BROADCAST DATE/TIME"]), _ist(row["EXCHANGE DISSEMINATION TIME"])
-    if disseminated < received or disseminated > retrieved:
-        raise ValueError("dissemination time is before receipt or after this file was obtained")
-    quarter_end = datetime.strptime(row["QUARTER END DATE"].strip(), "%d-%b-%Y").date().isoformat()
     basis, submission = row["CONSOLIDATED / STANDALONE"].strip(), row["TYPE OF SUBMISSION"].strip()
     if basis not in IF_LISTING_BASIS:
         raise ValueError(f"unknown basis {basis!r}")
     if submission not in SUBMISSION_TYPES:
         raise ValueError(f"unknown type of submission {submission!r}")
-    revised_text = row["REVISED DATE/TIME"].strip()
+    broadcast_text, revised_text = row["BROADCAST DATE/TIME"].strip(), row["REVISED DATE/TIME"].strip()
     revised = _ist(revised_text) if revised_text else None
-    if submission == "Revised" and revised is None:
-        raise ValueError("a revised filing must carry its revision time")
-    if revised is not None and (revised < received or revised > retrieved):
-        raise ValueError("revision time is before receipt or after this file was obtained")
+    if submission == "Revision":
+        if revised is None:
+            raise ValueError("a revision must carry its revision time")
+        received = _ist(broadcast_text) if broadcast_text else revised   # NSE leaves the broadcast time blank
+    else:
+        if revised is not None:
+            raise ValueError("an original filing must not carry a revision time")
+        received = _ist(broadcast_text)
+    disseminated = _ist(row["EXCHANGE DISSEMINATION TIME"])
+    if disseminated < received or disseminated > retrieved:
+        raise ValueError("dissemination time is before receipt or after this file was obtained")
+    if revised is not None and revised > disseminated:
+        raise ValueError("revision time is after the dissemination time")
+    quarter_end = datetime.strptime(row["QUARTER END DATE"].strip(), "%d-%b-%Y").date().isoformat()
     return [file_name, symbol, row["COMPANY NAME"].strip(), quarter_end, submission,
             row["AUDITED / UNAUDITED"].strip(), basis, url, received.isoformat(), disseminated.isoformat(),
             revised.isoformat() if revised else None, row["REVISION REMARKS"].strip() or None]
@@ -383,13 +528,13 @@ def _tolerance(decimals):
 
 def _listing_row(conn, fmt, file_name):
     """The listing row for this XBRL file as (filing_id, symbol, company, basis, period end,
-    disseminated_at, listing artifact, submission type, revised_at), or None."""
+    disseminated_at, listing artifact, submission type, revision remarks), or None."""
     if fmt is OLD_INDAS:
         sql = ("SELECT filing_id, NULL, company_name, consolidated, period_ended, disseminated_at, artifact_id,"
                " 'Original', NULL FROM fr_filings WHERE xbrl_file_name = ?")
     else:
         sql = ("SELECT filing_id, symbol, company_name, consolidated, quarter_end, disseminated_at, artifact_id,"
-               " submission_type, revised_at FROM if_filings WHERE xbrl_file_name = ?")
+               " submission_type, revision_remarks FROM if_filings WHERE xbrl_file_name = ?")
     return conn.execute(sql, [file_name]).fetchone()
 
 
@@ -404,7 +549,8 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
     basis = FILE_BASIS.get(_one_value(facts, "NatureOfReportStandaloneConsolidated").lower())
     if basis is None:
         raise ResultsFileError("NatureOfReportStandaloneConsolidated is neither Consolidated nor Standalone")
-    audited = _one_value(facts, "WhetherResultsAreAuditedOrUnaudited")
+    audited = ", ".join(sorted({f["text"] for f in facts if f["name"] == "WhetherResultsAreAuditedOrUnaudited"
+                                and f["text"]})) or "not stated"   # a year can be audited, its quarter not
     file_isin = None if fmt is OLD_INDAS else _one_value(facts, "ISIN")
     problems = []
 
@@ -447,10 +593,10 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
 
     # Listing: cross-check and take the proven publication time.
     filing = _listing_row(conn, fmt, Path(path).name)
-    published_at = evidence = filing_id = None
+    published_at = evidence = filing_id = revision = None
     if filing:
         filing_id, listed_symbol, listed_name, listed_basis, listed_end, disseminated_at, listing_artifact, \
-            submission, revised_at = filing
+            submission, remarks = filing
         if {**LISTING_BASIS, **IF_LISTING_BASIS}[listed_basis] != basis:
             raise ResultsFileError(f"The listing says {listed_basis} but the file says {basis}")
         if listed_end not in {end for end, _ in periods.values()}:
@@ -461,13 +607,11 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
             raise ResultsFileError(f"The listing names {listed_name!r}; the file names {company!r}")
         if parse_timestamp(disseminated_at) > parse_timestamp(retrieved_at):
             raise ResultsFileError("The listing's dissemination time is after this file was obtained")
-        if submission == "Revised":
-            problems.append(("publication_not_proven", f"the listing marks this filing Revised (revised {revised_at});"
-                             " publication times of revised filings are not proven yet (5B)"))
-        else:
-            published_at = disseminated_at
-            evidence = (f"NSE results listing (artifact {listing_artifact}): exchange dissemination time "
-                        f"{disseminated_at}")
+        published_at = disseminated_at
+        evidence = (f"NSE results listing (artifact {listing_artifact}): exchange dissemination time "
+                    f"{disseminated_at}")
+        if submission == "Revision":
+            revision = evidence = f"{evidence}; revised filing - remark: {remarks or 'none given'}"
     else:
         problems.append(("no_listing", "file not in a loaded results listing: publication time not proven (5B)"))
 
@@ -495,8 +639,9 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
             else:
                 found[field] = (amount, unit, f["decimals"])
         if standalone_only:
-            problems.append(("standalone_only", f"{ctx_id}: bank ratios are taken from the standalone report only - "
-                                                f"not stored from this {basis} report: {', '.join(standalone_only)}"))
+            problems.append(("standalone_only", f"{ctx_id}: regulatory ratios are taken from the standalone report"
+                                                f" only - not stored from this {basis} report:"
+                                                f" {', '.join(standalone_only)}"))
         values[ctx_id] = {k: v for k, v in found.items() if v is not None}
 
     # Accounting identities.
@@ -518,7 +663,7 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
 
     def work(c):
         artifact_id, _ = store_raw_artifact(c, fmt.source_id, path, retrieved_at, published_at, evidence, raw_dir)
-        counts = {"recorded": 0, "already_present": 0, "marked_conflict": 0}
+        counts = {"recorded": 0, "already_present": 0, "marked_conflict": 0, "corrected": 0}
         for ctx_id, (end, duration) in periods.items():
             for field, (amount, unit, _) in values[ctx_id].items():
                 key = f"{field}_{duration}"
@@ -533,14 +678,24 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
                         record_fact(c, isin, key, basis, end, float(amount), unit, artifact_id)
                     counts["already_present" if existed else "recorded"] += 1
                 except PitConflictError as e:
-                    problems.append(("conflicts_with_recorded_fact", f"{key} {end}: {e}"))
+                    if revision is None:
+                        problems.append(("conflicts_with_recorded_fact", f"{key} {end}: {e}"))
+                    elif field in conflicted[ctx_id]:
+                        problems.append(("revision_not_applied", f"{key} {end}: the revised figure fails an "
+                                                                 "accounting identity - the recorded figure stays"))
+                    else:
+                        try:
+                            record_correction(c, isin, key, basis, end, float(amount), unit, artifact_id, revision)
+                            counts["corrected"] += 1
+                        except PitError as refused:
+                            problems.append(("correction_refused", f"{key} {end}: {refused}"))
         load_id = c.execute(
             "INSERT INTO fr_loads (artifact_id, parser_version, isin, symbol, basis, audited, filing_id, facts_recorded,"
-            " facts_already_present, facts_marked_conflict, problems, recorded_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " facts_already_present, facts_marked_conflict, facts_corrected, problems, recorded_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [artifact_id, fmt.parser_version, isin, symbol, basis, audited, filing_id if fmt is OLD_INDAS else None,
-             counts["recorded"], counts["already_present"], counts["marked_conflict"], len(problems),
-             now_utc()]).lastrowid
+             counts["recorded"], counts["already_present"], counts["marked_conflict"], counts["corrected"],
+             len(problems), now_utc()]).lastrowid
         if filing_id is not None and fmt is not OLD_INDAS:
             c.execute("INSERT INTO if_load_filings VALUES (?, ?)", [load_id, filing_id])
         c.executemany("INSERT INTO fr_problems VALUES (?, ?, ?)", [(load_id, k, d) for k, d in problems])
@@ -548,6 +703,6 @@ def load_results_xbrl(conn, path, retrieved_at, raw_dir=None):
                 "periods": sorted(f"{end} ({d})" for end, d in periods.values()),
                 "publication_proven": published_at is not None, "facts_recorded": counts["recorded"],
                 "already_present": counts["already_present"], "marked_source_conflict": counts["marked_conflict"],
-                "problems": [f"{k}: {d}" for k, d in problems]}
+                "corrected_by_revision": counts["corrected"], "problems": [f"{k}: {d}" for k, d in problems]}
 
     return run_in_transaction(conn, work)
