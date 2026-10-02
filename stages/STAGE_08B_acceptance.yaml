@@ -1,0 +1,33 @@
+stage: "08B - Bank results and SEBI integrated filings (results from March 2025 onwards)"
+status: ACCEPTED_BANK_AND_INTEGRATED_RESULTS_BASELINE
+architecture: [40B step 7, 4, 4C, 5, 5B, 9B, 47 criterion 32, ADR-002]
+proven:
+  - NSE publishes results for quarters ended March 2025 onwards only as SEBI integrated filings; both the listing and the XBRL files are read (tested)
+  - Ind AS companies keep the same field names in the old and the new format, so one company's series continues across the change (tested)
+  - Bank results are read with bank line items and nine bank accounting identities (tested)
+  - Bank NPA, CET1 and return-on-assets figures are taken from the standalone report only; consolidated zeros are never stored (tested)
+  - Paid-up capital, face value and CET1 of zero or less are placeholders and are not stored (tested)
+  - The file's own ISIN must be the ISIN its symbol names on the period end (tested)
+  - Unsupported SEBI families (NBFC, insurance) are refused whole, nothing stored (tested)
+  - The integrated listing's dissemination time proves publication; a row marked Revised never does (tested)
+  - "Real data: HDFC Bank Apr-Jun 2026 standalone - interest earned 79,362.78 cr, net profit 19,059.72 cr, gross NPA 1.17%, net NPA 0.41%, CET1 19.57%; published 18-Jul-2026 16:01 IST"
+  - "Real data: HDFC Bank Apr-Jun 2026 consolidated - interest earned 90,575.33 cr, owners' profit 19,244.71 cr; six placeholder zeros (NPA, CET1, ROA) refused"
+  - "Real data: HDFC Bank Jan-Mar 2026 standalone quarter and full year FY2025-26 both stored; Oct-Dec 2025 nine-month context refused"
+  - "Real data: all nine bank identities hold on all four HDFC Bank files"
+  - "Real data: TCS Apr-Jun 2026 consolidated in the new format - revenue 72,275.00 cr, owners' profit 13,349.00 cr, exceptional items -668.00 cr"
+not_claimed:
+  NBFCs, housing finance and insurance companies: false
+  balance sheet and cash flow figures: false
+  half-year and nine-month periods: false
+  segment results: false
+  revised filings recorded as corrections automatically: false
+  publication time of revised filings: false
+  results filed across an ISIN change: false
+  per-share figures adjusted for bonus issues and splits: false
+negative_assertions:
+  consolidated and standalone figures mixed: false
+  bank ratio stored from a consolidated report: false
+  placeholder zero stored as a real value: false
+  year-to-date figures stored as a quarter: false
+  file accepted when its ISIN names another company: false
+  revised filing treated as proving its publication time: false

@@ -8,9 +8,10 @@ Commands:
   load-corporate-actions FILE   load NSE's corporate actions file (CF-CA-equities-*.csv)
   compare-series SYMBOL START END  raw vs corporate-action-adjusted closes (dates YYYY-MM-DD)
   bridge-isins              bridge ISIN changes at recorded splits/bonuses (6D), then retry quarantined rows
-  load-results-index FILE   load NSE's financial-results listing (CF-FR-*.csv) - load this before the XBRL files
-  load-results FILE [...]   load NSE financial-results XBRL files (INDAS_*.xml)
-  show-fundamentals SYMBOL  list the stored financial-results figures for one company
+  load-results-index FILE [...]  load NSE results listings (CF-FR-*.csv or CF-Integrated-Filing-*.csv) -
+                            load these before the XBRL files
+  load-results FILE [...]   load NSE results XBRL files (INDAS_*.xml or INTEGRATED_FILING_*.xml)
+  show-fundamentals SYMBOL [PERIOD_END]  list the stored results figures for one company (date YYYY-MM-DD)
   report                    show what is in the database
 
 Files are downloaded by hand from nseindia.com into data/inbox. The time a
@@ -160,12 +161,20 @@ def bridge_isins(args):
 
 
 def load_results_listing(args):
-    if len(args) != 1:
-        raise SystemExit("Usage: python manage.py load-results-index FILE")
+    if not args:
+        raise SystemExit("Usage: python manage.py load-results-index FILE [FILE ...]")
     log = setup_logging()
     conn = open_db()
-    log.info("Results listing: %s", load_results_index(conn, args[0], datetime.now(timezone.utc)))
+    failed = 0
+    for name in args:
+        try:
+            log.info("%s: %s", Path(name).name, load_results_index(conn, name, datetime.now(timezone.utc)))
+        except Exception as e:  # report and carry on with the next file; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT LOADED - %s: %s", Path(name).name, type(e).__name__, e)
     conn.close()
+    if failed:
+        raise SystemExit(f"{failed} file(s) were not loaded - see the messages above")
 
 
 def load_results(args):
@@ -189,25 +198,28 @@ def load_results(args):
 
 
 def show_fundamentals(args):
-    if len(args) != 1:
-        raise SystemExit("Usage: python manage.py show-fundamentals SYMBOL")
+    if len(args) not in (1, 2):
+        raise SystemExit("Usage: python manage.py show-fundamentals SYMBOL [PERIOD_END]")
     conn = open_db()
     isins = [r[0] for r in conn.execute(
         "SELECT DISTINCT isin FROM entity_aliases WHERE alias_type = 'nse_symbol' AND alias_value = ?", [args[0]])]
     if not isins:
         raise SystemExit(f"Unknown symbol {args[0]}")
     marks = ", ".join("?" * len(isins))
+    period = " AND f.period_end = ?" if len(args) == 2 else ""
     rows = conn.execute(
         "SELECT f.period_end, f.basis, f.field, f.value, f.missing_class, f.unit, f.version, a.published_at"
-        f" FROM pit_facts f JOIN raw_artifacts a ON a.artifact_id = f.artifact_id WHERE f.isin IN ({marks})"
-        " ORDER BY f.period_end, f.basis, f.field, f.version", isins).fetchall()
-    print(f"{args[0]}: {len(rows)} figures (INR amounts shown in crore)")
+        f" FROM pit_facts f JOIN raw_artifacts a ON a.artifact_id = f.artifact_id WHERE f.isin IN ({marks}){period}"
+        " ORDER BY f.period_end, f.basis, f.field, f.version", isins + args[1:]).fetchall()
+    print(f"{' '.join(args)}: {len(rows)} figures (INR amounts shown in crore, ratios in percent)")
     print(f"  {'period end':<12}{'basis':<14}{'field':<44}{'value':>14}  published")
     for end, basis, field, value, missing, unit, version, published in rows:
         if value is None:
             shown = f"[{missing}]"
         elif unit == "INR":
             shown = f"{value / 1e7:,.2f}"
+        elif unit == "ratio":
+            shown = f"{value:.2%}"
         else:
             shown = f"{value:,.2f}"
         when = published[:16] if published else "not proven"
@@ -235,7 +247,8 @@ def report(args):
         " JOIN ingestion_runs r2 ON r2.run_id = p.run_id WHERE r2.artifact_id = x.artifact_id"
         " AND p.row_number = x.row_number)")))
     print(f"Identity bridges (6D):     {one('SELECT COUNT(*) FROM identity_bridges')}")
-    print(f"Results filings listed:    {one('SELECT COUNT(*) FROM fr_filings')}")
+    print(f"Results filings listed:    {one('SELECT COUNT(*) FROM fr_filings')} (old page)"
+          f" + {one('SELECT COUNT(*) FROM if_filings')} (integrated filing)")
     print(f"Results files loaded:      {one('SELECT COUNT(*) FROM fr_loads')}")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")

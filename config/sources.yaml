@@ -100,3 +100,35 @@ sources:
     reliability_rating: A
     authentication_method: none (manual browser download)
     schema_description: XBRL instance - contexts, units and facts per filing; basis declared in the file
+
+  - source_id: nse_integrated_filing_index
+    provider: NSE
+    source_class: exchange_official
+    data_type: listing of SEBI integrated filings (financials) with XBRL links, submission type and exchange dissemination times
+    endpoint: https://www.nseindia.com/companies-listing/corporate-integrated-filing?integratedType=integratedfilingfinancials
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: as companies file
+    historical_coverage: quarters ended March 2025 onwards; chosen company or date range per download
+    latency: minutes after filing
+    revision_policy: revised filings are marked Revised with a revision time and remarks
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (manual browser download)
+    schema_description: one row per filing - symbol, company, quarter end, submission type, audited, basis, XBRL link, broadcast, revision and dissemination times
+
+  - source_id: nse_integrated_filing_xbrl
+    provider: NSE (company filings)
+    source_class: company_filing
+    data_type: quarterly and annual results in SEBI integrated-filing XBRL (Ind AS companies and banks)
+    endpoint: https://nsearchives.nseindia.com/corporate/xbrl/
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: quarterly per company
+    historical_coverage: per filing, quarters ended March 2025 onwards
+    latency: as filed by the company
+    revision_policy: a revised filing is a new file; a changed value is a conflict until a correction is recorded
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (manual browser download)
+    schema_description: XBRL instance in SEBI's in-capmkt taxonomy - symbol, ISIN, basis, contexts, units and facts per filing
