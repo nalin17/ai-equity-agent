@@ -25,11 +25,11 @@ import csv
 import io
 import json
 import re
-from datetime import date
 from enum import StrEnum
 from pathlib import Path
 
 from core.database import now_utc, run_in_transaction
+from core.dates import strict_iso_date
 from ingestion.source_registry import get_source
 from provenance.availability import parse_timestamp
 from provenance.raw_store import store_raw_artifact
@@ -86,7 +86,7 @@ def check_schema_and_type(row):
     if not ISO_DATE.match(rec["trade_date"]):
         raise RecordRejected(stage, f"trade_date must be YYYY-MM-DD, got {rec['trade_date']!r}")
     try:
-        date.fromisoformat(rec["trade_date"])
+        strict_iso_date(rec["trade_date"])
     except ValueError:
         raise RecordRejected(stage, f"trade_date is not a real date: {rec['trade_date']!r}") from None
     for field in PRICE_FIELDS:
@@ -102,7 +102,7 @@ def check_schema_and_type(row):
 def check_timestamp(rec, retrieved_at, published_at=None):
     """Stage 2. A trade cannot be dated after the file that reports it existed."""
     stage = TrustStage.TIMESTAMP_AND_AVAILABILITY
-    trade_date = date.fromisoformat(rec["trade_date"])
+    trade_date = strict_iso_date(rec["trade_date"])
     if trade_date > retrieved_at.date():
         raise RecordRejected(stage, f"trade_date {trade_date} is after the file was retrieved ({retrieved_at})")
     if published_at is not None and trade_date > published_at.date():

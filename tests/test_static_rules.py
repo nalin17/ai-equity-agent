@@ -34,3 +34,13 @@ def test_missing_data_classes_are_defined_in_one_place():
             assert f'"{cls.value}"' not in text and f"'{cls.value}'" not in text, (
                 f"{path} restates missing-data class {cls.value!r}; import MissingClass instead"
             )
+
+
+def test_dates_are_parsed_only_by_core_dates():
+    # Found in Stage 6: date.fromisoformat() accepts '20240101' and '2024-W01-1',
+    # which sort wrongly as text. Only core/dates.py may call it (40D rule 3).
+    home = SRC / "core" / "dates.py"
+    pattern = re.compile(r"\bdate\.fromisoformat\(")
+    offenders = [str(p) for p in source_files()
+                 if p != home and pattern.search(p.read_text(encoding="utf-8"))]
+    assert offenders == []

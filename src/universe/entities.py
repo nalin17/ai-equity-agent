@@ -15,9 +15,8 @@
 Dates are ISO text: "YYYY-MM-DD". An alias is valid on a date when
 valid_from <= date < valid_to (valid_to empty means still valid).
 """
-from datetime import date
-
 from core.database import now_utc, run_in_transaction
+from core.dates import strict_iso_date
 
 ALIAS_TYPES = {"nse_symbol", "bse_code", "vendor_id", "company_name"}
 EVENT_TYPES = {
@@ -44,7 +43,7 @@ class AmbiguousIdentityError(EntityError):
 
 def check_date(value):
     try:
-        date.fromisoformat(value)
+        strict_iso_date(value)
     except (TypeError, ValueError):
         raise EntityError(f"Not a valid YYYY-MM-DD date: {value!r}") from None
     return value

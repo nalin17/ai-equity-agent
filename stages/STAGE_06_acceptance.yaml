@@ -1,0 +1,27 @@
+stage: "06 - Historical universe and survivorship"
+status: ACCEPTED_HISTORICAL_UNIVERSE_BASELINE
+architecture: [6A.1, 3A, 40B step 5, 40D rule 3, ADR-002]
+proven:
+  - A replay over a period containing a delisting and a merger includes both names (tested)
+  - Membership is a versioned point-in-time history; a version is frozen and a corrected history is a new version (tested)
+  - Delisting, merger and suspension exits must match a dated entity event (tested)
+  - Every replay run records the universe version it used (tested)
+  - A replay over a period with no delisted or merged member is rejected, and nothing is recorded (tested)
+  - Coverage universes must sit inside the research universe (tested)
+  - A coverage cohort cannot be replayed over the period used to select it (tested)
+  - Dates are accepted only as YYYY-MM-DD across the project; compact and week-form dates are refused (tested, defect found and fixed in this stage)
+not_claimed:
+  real NSE listing and delisting history loaded: false
+  research universe of 100 or more simultaneously eligible securities (14): false
+  investability floor (14.0): false
+  coverage cohort selected: false
+  deterministic economic resolution of delisted claims (21.1): false
+  historical replay readiness: false
+negative_assertions:
+  universe built from currently listed names: false
+  delisted company dropped from a replay period it was listed in: false
+  universe version changed after creation: false
+  replay accepted without survivorship evidence: false
+  covered company outside the research universe: false
+  cohort evaluated on its own selection period: false
+  compact or week-form date stored: false

@@ -17,9 +17,9 @@ Historical research must reconstruct what was knowable at time T.
 """
 import re
 from dataclasses import dataclass
-from datetime import date
 
 from core.database import now_utc
+from core.dates import strict_iso_date
 from data_quality.missing_data import check_reclassification, check_value
 from provenance.availability import Availability, disposition, parse_timestamp
 
@@ -56,7 +56,7 @@ def _check_key(conn, isin, field, basis, period_end, unit):
     if unit not in UNITS:
         raise PitError(f"unit must be one of {sorted(UNITS)}, got {unit!r}")
     try:
-        date.fromisoformat(period_end)
+        strict_iso_date(period_end)
     except (TypeError, ValueError):
         raise PitError(f"period_end must be YYYY-MM-DD, got {period_end!r}") from None
 

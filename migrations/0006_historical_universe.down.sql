@@ -1,0 +1,14 @@
+DROP TRIGGER replay_runs_no_delete;
+DROP TRIGGER replay_runs_no_update;
+DROP TRIGGER universe_membership_no_delete;
+DROP TRIGGER universe_membership_no_update;
+DROP TRIGGER universe_versions_no_delete;
+DROP TRIGGER universe_versions_no_update;
+DROP TRIGGER universes_no_delete;
+DROP TRIGGER universes_no_update;
+DROP TRIGGER universe_membership_frozen;
+DROP TABLE replay_runs;
+DROP INDEX idx_universe_membership;
+DROP TABLE universe_membership;
+DROP TABLE universe_versions;
+DROP TABLE universes;
