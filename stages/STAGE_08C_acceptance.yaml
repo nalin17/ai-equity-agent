@@ -1,0 +1,23 @@
+stage: "08C - Manual intake tools: download checklist and one-command inbox loading (ADR-004)"
+status: ACCEPTED_MANUAL_INTAKE_BASELINE
+architecture: [2, 4, 5B.2, 40D, ADR-004]
+proven:
+  - Recognised NSE downloads are moved into the inbox; browser ' (1)' copies get their real names back; other files are left alone (tested)
+  - Nothing is overwritten - a same-named file with different bytes is left where it is and reported; a newer equity list or listing is kept beside the old one (tested)
+  - The inbox loads in dependency order - equity list, corporate actions, prices by trade date, listings, then results in NSE publication order (tested)
+  - A results file waits until its listing row is loaded, so its publication time is never lost (tested)
+  - Files already ingested (same bytes) are skipped; one failing file does not stop the rest (tested)
+  - The checklist lists only files not yet in the inbox or database, as plain links for a person to click, plus missing weekday price files (tested)
+  - No source file imports a network library (static test, ADR-004)
+  - "Real data: all 19 hand-downloaded files went into an empty database with one command - 17 loaded in order, 2 old-format results files held back for lack of a listing; a second run skipped every file"
+  - "Real data: the checklist built from the HDFC Bank and TCS listings found 7 results files and 5 weekday price files still to download"
+not_claimed:
+  automated download of any NSE file: false
+  a licensed data source for scale: false
+  exchange holiday calendar for price files: false
+  watching the download folder continuously: false
+negative_assertions:
+  automated collection from NSE: false
+  file overwritten in the inbox: false
+  results file stored before its listing without an explicit option: false
+  same file ingested twice: false

@@ -12,11 +12,16 @@ Commands:
                             load these before the XBRL files
   load-results FILE [...]   load NSE results XBRL files (INDAS_*.xml or INTEGRATED_FILING_*.xml)
   show-fundamentals SYMBOL [PERIOD_END]  list the stored results figures for one company (date YYYY-MM-DD)
+  ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
+                            into data/inbox, then load every new file in the right order
+  checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
+                            write data/checklist.html - links to the files still to download
   report                    show what is in the database
 
-Files are downloaded by hand from nseindia.com into data/inbox. The time a
-file is ingested is recorded as its retrieval time: it is the moment the data
-verifiably entered this system (architecture 5B.2).
+Files are downloaded by hand from nseindia.com: NSE's terms of use prohibit
+automated collection (ADR-004). The time a file is ingested is recorded as its
+retrieval time: it is the moment the data verifiably entered this system
+(architecture 5B.2).
 """
 import sys
 from datetime import datetime, timezone
@@ -24,9 +29,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+from core.config import PROJECT_ROOT, load_config  # noqa: E402
 from core.database import connect, migrate  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
+from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, write_checklist  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
@@ -227,6 +234,72 @@ def show_fundamentals(args):
     conn.close()
 
 
+def inbox_dir():
+    return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "inbox"
+
+
+def ingest_inbox_files(args):
+    flags = [a for a in args if a.startswith("--")]
+    folders = [a for a in args if not a.startswith("--")]
+    if set(flags) - {"--without-listing"} or len(folders) > 1:
+        raise SystemExit("Usage: python manage.py ingest-inbox [--without-listing] [DOWNLOADS_FOLDER]")
+    downloads = Path(folders[0]) if folders else Path.home() / "Downloads"
+    log = setup_logging()
+    conn = open_db()
+    if downloads.is_dir():
+        moved = collect_downloads(downloads, inbox_dir())
+        log.info("From %s: %s file(s) moved into the inbox", downloads, len(moved["moved"]))
+        for name in moved["already_in_inbox"]:
+            print(f"     already in the inbox (left where it is): {name}")
+        for name in moved["name_clash"]:
+            print(f"     NOT MOVED - a different file with this name is already in the inbox: {name}")
+    else:
+        log.warning("No folder %s - nothing collected", downloads)
+    counts = {}
+    for name, kind, outcome, detail in ingest_inbox(conn, inbox_dir(),
+                                                    require_listing="--without-listing" not in flags):
+        counts[outcome] = counts.get(outcome, 0) + 1
+        if outcome == "loaded":
+            problems = detail.get("problems", []) if isinstance(detail, dict) else []
+            log.info("%s: %s", name, {k: v for k, v in detail.items() if k != "problems"}
+                     if isinstance(detail, dict) else detail)
+            for problem in problems:
+                print(f"     {problem}")
+        elif outcome == "failed":
+            log.error("%s: NOT LOADED - %s", name, detail)
+        elif outcome == "waiting" or kind is None:
+            log.warning("%s: %s", name, detail)
+    log.info("Inbox: %s", ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "empty")
+    conn.close()
+    if counts.get("failed"):
+        raise SystemExit(f"{counts['failed']} file(s) were not loaded - see the messages above")
+
+
+def make_checklist(args):
+    usage = ("Usage: python manage.py checklist [LISTING_FILE ...] [--symbols A,B] [--since YYYY-MM-DD]"
+             " [--prices-from YYYY-MM-DD]")
+    options, files, i = {}, [], 0
+    while i < len(args):
+        if args[i] in ("--symbols", "--since", "--prices-from") and i + 1 < len(args):
+            options[args[i]] = args[i + 1]
+            i += 2
+        elif args[i].startswith("--"):
+            raise SystemExit(usage)
+        else:
+            files.append(args[i])
+            i += 1
+    if not files and "--prices-from" not in options:
+        raise SystemExit(usage)
+    conn = open_db()
+    symbols = options["--symbols"].split(",") if "--symbols" in options else None
+    items = checklist_items(conn, files, inbox_dir(), symbols, options.get("--since"), options.get("--prices-from"))
+    out = inbox_dir().parent / "checklist.html"
+    todo = write_checklist(items, out)
+    print(f"{todo} file(s) to download, {len(items) - todo} already in the inbox or database.")
+    print(f"Open the checklist with:  start {out}")
+    conn.close()
+
+
 def report(args):
     conn = open_db()
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
@@ -276,6 +349,8 @@ COMMANDS = {
     "load-results-index": load_results_listing,
     "load-results": load_results,
     "show-fundamentals": show_fundamentals,
+    "ingest-inbox": ingest_inbox_files,
+    "checklist": make_checklist,
     "report": report,
 }
 
