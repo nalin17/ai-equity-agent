@@ -7,7 +7,7 @@ that, and it never contacts any website:
     the inbox, undoing the browser's ' (1)' renaming. A newer download of a file whose name
     NSE reuses (the equity list, listings) is kept beside the old one under a content tag;
   - ingest_inbox: load every inbox file not ingested yet, in dependency order - equity
-    list, corporate actions, prices by trade date, results listings, then results files
+    list, corporate actions, announcements, prices by trade date, results listings, then results files
     in the order NSE published them. A results file whose listing row is not loaded waits:
     once stored without it, its publication time could never be proven (5B);
   - checklist_items / write_checklist: from listings already downloaded, one page of links
@@ -22,6 +22,7 @@ from pathlib import Path
 
 from core.dates import strict_iso_date
 from ingestion.market_adapters import ingest_market_file, read_raw_table
+from ingestion.nse_announcements import load_announcements
 from ingestion.nse_corporate_actions import load_corporate_actions, normalise_name
 from ingestion.nse_financial_results import NSE_ARCHIVE, load_results_index, load_results_xbrl
 from provenance.raw_store import sha256_bytes
@@ -34,14 +35,16 @@ BHAVCOPY_URL = NSE_ARCHIVE + "content/cm/BhavCopy_NSE_CM_0_0_0_{}_F_0000.csv.zip
 KINDS = (
     ("equity_list", re.compile(r"^EQUITY_L(__[0-9a-f]{8})?\.csv$"), 1),
     ("corporate_actions", re.compile(r"^CF-CA-equities-.+\.csv$"), 2),
-    ("prices", re.compile(r"^BhavCopy_NSE_CM_0_0_0_(\d{8})_F_0000\.csv(\.zip)?$"), 3),
-    ("results_listing", re.compile(r"^CF-(FR|Integrated-Filing)-.+\.csv$"), 4),
-    ("results", re.compile(r"^(INDAS|INTEGRATED_FILING)_[A-Za-z0-9_]+\.xml$"), 5),
+    ("announcements", re.compile(r"^CF-AN-.+\.csv$"), 3),
+    ("prices", re.compile(r"^BhavCopy_NSE_CM_0_0_0_(\d{8})_F_0000\.csv(\.zip)?$"), 4),
+    ("results_listing", re.compile(r"^CF-(FR|Integrated-Filing)-.+\.csv$"), 5),
+    ("results", re.compile(r"^(INDAS|INTEGRATED_FILING)_[A-Za-z0-9_]+\.xml$"), 6),
 )
-REUSED_NAMES = {"equity_list", "corporate_actions", "results_listing"}   # NSE reuses these names
+REUSED_NAMES = {"equity_list", "corporate_actions", "announcements", "results_listing"}   # NSE reuses these names
 LOADERS = {
     "equity_list": load_equity_list,
     "corporate_actions": load_corporate_actions,
+    "announcements": load_announcements,
     "prices": ingest_market_file,
     "results_listing": load_results_index,
     "results": load_results_xbrl,

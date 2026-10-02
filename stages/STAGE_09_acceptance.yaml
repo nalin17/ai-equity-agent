@@ -1,0 +1,29 @@
+stage: "09 - Corporate event adapter (NSE corporate announcements)"
+status: ACCEPTED_CORPORATE_EVENTS_BASELINE
+architecture: [40B step 8, 4, 4A, 4D, 5, 5B, ADR-004]
+proven:
+  - One release filed several times collapses to one event, with every filing kept as its provenance (tested)
+  - Rule an-dedup-1 merges only on the same company and the same distinctive attachment name within 60 minutes of the first filing; generic names, bare symbols and names reused later never merge (tested)
+  - Each subject keeps the time it was first disseminated; an event's publication time is its first filing's dissemination time (tested)
+  - Events are derived from what was known at the decision time, so a later filing can never date an event earlier (tested)
+  - The same filing in two downloads is stored once; a filing recorded differently is a conflict (tested)
+  - Rows whose company cannot be resolved, whose name disagrees with the registry or whose times are impossible are refused and recorded (tested)
+  - Subjects map to registered event types (4A.0) through versioned mapping an-types-1; subjects without one meaning stay unclassified; extraction confidence describes only the mapping (tested)
+  - Announcement text is stored verbatim and never acted on (4D) (tested)
+  - "Real data: HDFC Bank's board outcome of 18-Apr-2026, filed four times in 23 minutes (outcome, record date, dividend), is one dividend event first published 14:45:47 IST"
+  - "Real data: HDFC Bank's results filing of 17-Jan-2026 (three filings) is one event; its two look-alike filings of 29-Aug-2026 (different file names) stay two"
+  - "Real data: one market week (25-Sep to 02-Oct-2026) - 5,885 rows, 5,760 filings stored, 125 refused (52 symbols not in the company registry, none with a name disagreement); with HDFC Bank's year, 5,903 filings form 5,723 events, 138 of them merged releases"
+  - "Real data: 5 filings present in both downloads were stored once"
+not_claimed:
+  attachment contents read or compared (duplicates are judged by file name and timing, not by the PDF bytes): false
+  direction, materiality and expected horizon of events: false
+  classification of unclassified subjects from the text: false
+  BSE announcements and cross-exchange syndication: false
+  news and other external sources (40B step 9): false
+  re-reading rows refused by an earlier registry: false
+negative_assertions:
+  one release counted as several events: false
+  different documents merged because they share a generic name: false
+  event dated earlier than its first public filing: false
+  announcement text followed as an instruction: false
+  event type guessed for an unclassified subject: false

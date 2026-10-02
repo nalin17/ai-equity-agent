@@ -1,0 +1,10 @@
+DROP TRIGGER an_problems_no_delete;
+DROP TRIGGER an_problems_no_update;
+DROP TRIGGER an_loads_no_delete;
+DROP TRIGGER an_loads_no_update;
+DROP TRIGGER an_filings_no_delete;
+DROP TRIGGER an_filings_no_update;
+DROP TABLE an_problems;
+DROP TABLE an_loads;
+DROP INDEX an_filings_isin_time;
+DROP TABLE an_filings;

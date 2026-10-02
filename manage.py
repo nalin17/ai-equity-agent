@@ -12,6 +12,8 @@ Commands:
                             load these before the XBRL files
   load-results FILE [...]   load NSE results XBRL files (INDAS_*.xml or INTEGRATED_FILING_*.xml)
   show-fundamentals SYMBOL [PERIOD_END]  list the stored results figures for one company (date YYYY-MM-DD)
+  load-announcements FILE [...]  load NSE corporate announcements (CF-AN-equities-*.csv)
+  show-events SYMBOL [FROM] [TO]  list one company's events - one per release (dates YYYY-MM-DD)
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -31,10 +33,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from core.config import PROJECT_ROOT, load_config  # noqa: E402
 from core.database import connect, migrate  # noqa: E402
+from core.dates import strict_iso_date  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
 from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, write_checklist  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
+from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
@@ -234,6 +238,46 @@ def show_fundamentals(args):
     conn.close()
 
 
+def load_announcement_files(args):
+    if not args:
+        raise SystemExit("Usage: python manage.py load-announcements FILE [FILE ...]")
+    log = setup_logging()
+    conn = open_db()
+    failed = 0
+    for name in args:
+        try:
+            result = load_announcements(conn, name, datetime.now(timezone.utc))
+            log.info("%s: %s", Path(name).name, {k: v for k, v in result.items() if k != "problems"})
+            for problem in result["problems"]:
+                print(f"     {problem}")
+        except Exception as e:  # report and carry on with the next file; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT LOADED - %s: %s", Path(name).name, type(e).__name__, e)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} file(s) were not loaded - see the messages above")
+
+
+def show_events(args):
+    if not 1 <= len(args) <= 3:
+        raise SystemExit("Usage: python manage.py show-events SYMBOL [FROM] [TO]")
+    start = strict_iso_date(args[1]).isoformat() if len(args) > 1 else "0001-01-01"
+    end = strict_iso_date(args[2]).isoformat() if len(args) > 2 else "9999-12-31"
+    conn = open_db()
+    isins = [r[0] for r in conn.execute(
+        "SELECT DISTINCT isin FROM entity_aliases WHERE alias_type = 'nse_symbol' AND alias_value = ?", [args[0]])]
+    if not isins:
+        raise SystemExit(f"Unknown symbol {args[0]}")
+    now = datetime.now(timezone.utc)
+    found = [e for isin in isins for e in events(conn, now, isin=isin) if start <= e["published_at"][:10] <= end]
+    print(f"{args[0]}: {len(found)} events (rule {DEDUP_RULE}, types {MAPPING_VERSION}); times are first dissemination")
+    for e in found:
+        print(f"  {e['published_at'][:16]}  {e['kind']:<15} {', '.join(e['event_types']) or '-':<26} filings: {len(e['filings'])}")
+        for subject, when in e["subjects"].items():
+            print(f"         {when[:16]}  {subject}")
+    conn.close()
+
+
 def inbox_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "inbox"
 
@@ -324,6 +368,8 @@ def report(args):
           f" + {one('SELECT COUNT(*) FROM if_filings')} (integrated filing)")
     print(f"Results files loaded:      {one('SELECT COUNT(*) FROM fr_loads')}"
           f"  (figures corrected by revisions: {one('SELECT COALESCE(SUM(facts_corrected), 0) FROM fr_loads')})")
+    print(f"Announcements (filings):   {one('SELECT COUNT(*) FROM an_filings')}"
+          f"  -> events: {len(events(conn, datetime.now(timezone.utc)))} (rule {DEDUP_RULE})")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -350,6 +396,8 @@ COMMANDS = {
     "load-results-index": load_results_listing,
     "load-results": load_results,
     "show-fundamentals": show_fundamentals,
+    "load-announcements": load_announcement_files,
+    "show-events": show_events,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,
