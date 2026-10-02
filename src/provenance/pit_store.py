@@ -24,7 +24,7 @@ from data_quality.missing_data import check_reclassification, check_value
 from provenance.availability import Availability, disposition, parse_timestamp
 
 BASES = {"consolidated", "standalone", "security"}
-UNITS = {"INR", "INR_lakh", "INR_crore", "shares", "ratio", "percent", "count"}
+UNITS = {"INR", "INR_lakh", "INR_crore", "INR_per_share", "shares", "ratio", "percent", "count"}
 FIELD_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 

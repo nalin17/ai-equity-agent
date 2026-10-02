@@ -1,0 +1,27 @@
+stage: "08 - Fundamental data adapter (NSE financial results)"
+status: ACCEPTED_FUNDAMENTALS_BASELINE
+architecture: [40B step 7, 4, 4C, 5, 5B, 47 criterion 32, ADR-002]
+proven:
+  - Consolidated and standalone figures are stored separately; basis is explicit on every fact (tested)
+  - A period context is used only when its dates agree with the file's own period fields; NSE's year-to-date 'FourD' trap is rejected (tested)
+  - Only 3-month and 12-month periods are stored, under separate field names (tested)
+  - A figure failing an accounting identity that no other identity confirms is stored as missing (source_conflict), never as the filed number (tested)
+  - Companies are matched by NSE symbol as of the period end with a company-name check; units and currency are checked (tested)
+  - The listing's dissemination time is the proven publication time; listed filings become replay-eligible, unlisted ones never do (tested)
+  - Re-filings never overwrite; different figures are recorded as conflicts (tested)
+  - "Real data: TCS consolidated Oct-Dec 2024 - revenue 63,973.00 cr, net profit 12,444.00 cr (owners 12,380.00 cr), EPS 34.21; FourD context rejected"
+  - "Real data: Reliance standalone Oct-Dec 2024 - revenue 1,28,260.00 cr, net profit 8,721.00 cr"
+  - "Real data: VST Tillers consolidated - placeholder zeros for owners/minority stored as source_conflict, net profit 1.28 cr kept; publication proven (disseminated 2026-07-30 17:18:42 IST)"
+not_claimed:
+  banks, insurers and NBFCs (other XBRL formats): false
+  balance sheet and cash flow figures: false
+  half-year and nine-month periods: false
+  segment results: false
+  coverage cohort fundamentals loaded in bulk: false
+  restatements recorded as corrections automatically: false
+negative_assertions:
+  consolidated and standalone figures mixed: false
+  year-to-date figures stored as a quarter: false
+  placeholder zero stored as a real value: false
+  recorded figure overwritten by a re-filing: false
+  publication time assumed from a board-meeting date: false

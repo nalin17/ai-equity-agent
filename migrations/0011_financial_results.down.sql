@@ -1,0 +1,9 @@
+DROP TRIGGER fr_problems_no_delete;
+DROP TRIGGER fr_problems_no_update;
+DROP TRIGGER fr_loads_no_delete;
+DROP TRIGGER fr_loads_no_update;
+DROP TRIGGER fr_filings_no_delete;
+DROP TRIGGER fr_filings_no_update;
+DROP TABLE fr_problems;
+DROP TABLE fr_loads;
+DROP TABLE fr_filings;

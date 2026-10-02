@@ -8,6 +8,9 @@ Commands:
   load-corporate-actions FILE   load NSE's corporate actions file (CF-CA-equities-*.csv)
   compare-series SYMBOL START END  raw vs corporate-action-adjusted closes (dates YYYY-MM-DD)
   bridge-isins              bridge ISIN changes at recorded splits/bonuses (6D), then retry quarantined rows
+  load-results-index FILE   load NSE's financial-results listing (CF-FR-*.csv) - load this before the XBRL files
+  load-results FILE [...]   load NSE financial-results XBRL files (INDAS_*.xml)
+  show-fundamentals SYMBOL  list the stored financial-results figures for one company
   report                    show what is in the database
 
 Files are downloaded by hand from nseindia.com into data/inbox. The time a
@@ -25,6 +28,7 @@ from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
+from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
 from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
@@ -155,6 +159,62 @@ def bridge_isins(args):
     conn.close()
 
 
+def load_results_listing(args):
+    if len(args) != 1:
+        raise SystemExit("Usage: python manage.py load-results-index FILE")
+    log = setup_logging()
+    conn = open_db()
+    log.info("Results listing: %s", load_results_index(conn, args[0], datetime.now(timezone.utc)))
+    conn.close()
+
+
+def load_results(args):
+    if not args:
+        raise SystemExit("Usage: python manage.py load-results FILE [FILE ...]")
+    log = setup_logging()
+    conn = open_db()
+    failed = 0
+    for name in args:
+        try:
+            result = load_results_xbrl(conn, name, datetime.now(timezone.utc))
+            log.info("%s: %s", Path(name).name, {k: v for k, v in result.items() if k != "problems"})
+            for problem in result["problems"]:
+                print(f"     {problem}")
+        except Exception as e:  # report and carry on with the next file; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT LOADED - %s: %s", Path(name).name, type(e).__name__, e)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} file(s) were not loaded - see the messages above")
+
+
+def show_fundamentals(args):
+    if len(args) != 1:
+        raise SystemExit("Usage: python manage.py show-fundamentals SYMBOL")
+    conn = open_db()
+    isins = [r[0] for r in conn.execute(
+        "SELECT DISTINCT isin FROM entity_aliases WHERE alias_type = 'nse_symbol' AND alias_value = ?", [args[0]])]
+    if not isins:
+        raise SystemExit(f"Unknown symbol {args[0]}")
+    marks = ", ".join("?" * len(isins))
+    rows = conn.execute(
+        "SELECT f.period_end, f.basis, f.field, f.value, f.missing_class, f.unit, f.version, a.published_at"
+        f" FROM pit_facts f JOIN raw_artifacts a ON a.artifact_id = f.artifact_id WHERE f.isin IN ({marks})"
+        " ORDER BY f.period_end, f.basis, f.field, f.version", isins).fetchall()
+    print(f"{args[0]}: {len(rows)} figures (INR amounts shown in crore)")
+    print(f"  {'period end':<12}{'basis':<14}{'field':<44}{'value':>14}  published")
+    for end, basis, field, value, missing, unit, version, published in rows:
+        if value is None:
+            shown = f"[{missing}]"
+        elif unit == "INR":
+            shown = f"{value / 1e7:,.2f}"
+        else:
+            shown = f"{value:,.2f}"
+        when = published[:16] if published else "not proven"
+        print(f"  {end:<12}{basis:<14}{field + (f' v{version}' if version > 1 else ''):<44}{shown:>14}  {when}")
+    conn.close()
+
+
 def report(args):
     conn = open_db()
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
@@ -175,6 +235,10 @@ def report(args):
         " JOIN ingestion_runs r2 ON r2.run_id = p.run_id WHERE r2.artifact_id = x.artifact_id"
         " AND p.row_number = x.row_number)")))
     print(f"Identity bridges (6D):     {one('SELECT COUNT(*) FROM identity_bridges')}")
+    print(f"Results filings listed:    {one('SELECT COUNT(*) FROM fr_filings')}")
+    print(f"Results files loaded:      {one('SELECT COUNT(*) FROM fr_loads')}")
+    print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
+          f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
             "SELECT failed_stage, COUNT(*) FROM quarantine GROUP BY 1 ORDER BY 2 DESC"):
         print(f"   {stage:<28} {n}")
@@ -196,6 +260,9 @@ COMMANDS = {
     "load-corporate-actions": load_ca,
     "compare-series": compare_series,
     "bridge-isins": bridge_isins,
+    "load-results-index": load_results_listing,
+    "load-results": load_results,
+    "show-fundamentals": show_fundamentals,
     "report": report,
 }
 

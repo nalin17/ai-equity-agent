@@ -68,3 +68,35 @@ sources:
     reliability_rating: A
     authentication_method: none (manual browser download)
     schema_description: one row per listed security - symbol, company name, series, listing date, ISIN
+
+  - source_id: nse_financial_results_index
+    provider: NSE
+    source_class: exchange_official
+    data_type: listing of financial-results filings with XBRL links and exchange dissemination times
+    endpoint: https://www.nseindia.com/companies-listing/corporate-filings-financial-results
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: as companies file
+    historical_coverage: chosen date range per download
+    latency: minutes after filing
+    revision_policy: re-filings appear as new rows with their own XBRL file and times
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (manual browser download)
+    schema_description: one row per filing - company, audited, cumulative, basis, period, XBRL link, received and disseminated times
+
+  - source_id: nse_financial_results_xbrl
+    provider: NSE (company filings)
+    source_class: company_filing
+    data_type: quarterly and annual financial results in XBRL (non-financial Ind AS format)
+    endpoint: https://nsearchives.nseindia.com/corporate/xbrl/
+    authority: primary
+    license: NSE website terms of use - check before redistribution
+    update_frequency: quarterly per company
+    historical_coverage: per filing
+    latency: as filed by the company
+    revision_policy: a re-filing is a new file; a changed value is a conflict until a correction is recorded
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (manual browser download)
+    schema_description: XBRL instance - contexts, units and facts per filing; basis declared in the file
