@@ -1,0 +1,30 @@
+stage: "04 - Data Trust chain for daily prices"
+status: ACCEPTED_PRICE_TRUST_CHAIN_BASELINE
+architecture: [4 Trust Chain, 4C.1, 5B, 40A item 11, 40B step 3, ADR-002]
+proven:
+  - A deliberately corrupted 11-row file is quarantined row by row at the correct stage; only the 2 good facts are trusted (tested)
+  - Stages run in the architecture order - schema, timestamp, identity, dedup, cross-source, anomaly (tested)
+  - Quarantined records are kept exactly as received (tested)
+  - The same fact twice is one fact with two provenance records (tested)
+  - Every trusted fact resolves to a raw file whose SHA-256 matches (tested)
+  - Empty files, wrong columns, unregistered sources and repeated files are refused with nothing stored (tested)
+  - Availability is ELIGIBLE / NOT_ELIGIBLE / AVAILABILITY_REVIEW; replay needs proven publication time (tested)
+  - Seven deliberate code faults were each caught by the tests
+not_claimed:
+  real NSE files ingested: false
+  corporate action and version check (6C): false
+  implausible period-to-period change detection: false
+  point-in-time versioning of corrections (Stage 5): false
+  survivorship and universe control (6A.1): false
+  numeric tolerance for cross-source comparison: false
+  injection attempts logged against source reliability (4D.1 rule 4): false
+  historical replay readiness: false
+negative_assertions:
+  corrupted record ingested: false
+  quarantined record repaired: false
+  trusted value overwritten by a conflicting file: false
+  conflicting values averaged: false
+  empty file stored as data: false
+  partial write left after a failure: false
+  unproven availability treated as eligible: false
+  current-decision eligibility treated as replay eligibility: false
