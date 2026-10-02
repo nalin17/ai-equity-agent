@@ -1,0 +1,26 @@
+stage: "07B - Corporate-action adjustment"
+status: PROTOTYPE
+architecture: [6C, 6C.1, 6C.2, 40A item 13, 40B step 6 (second half), ADR-002]
+proven:
+  - A known 1-to-5 split gives a continuous adjusted series and a discontinuous raw series (tested on sample data)
+  - Simple bonus and reverse split are back-adjusted from their verified share ratios (tested)
+  - Dividends and buybacks need no adjustment (tested)
+  - Rights, special dividends, mergers, demergers, complex bonuses and unknown terms block the window (tested)
+  - Blocking applies only to that security and window; raw prices stay available (tested)
+  - A price jump with no recorded action is never adjusted (tested); the factor module cannot read prices (static test)
+  - Raw prices are unchanged by adjustment; the adjusted series carries basis, policy version and actions applied (tested)
+  - The policy table states intent and implemented treatment for all ten action types, matching 6C (tested)
+not_claimed:
+  real split verified on real NSE prices: false
+  NSE corporate actions file parsed automatically (6C.2): false
+  rights issues adjusted (official factor or TERP): false
+  special dividends adjusted: false
+  merger successor splice: false
+  demerger reference-price treatment: false
+  corporate actions filtered by when they were announced (replay): false
+negative_assertions:
+  factor inferred from a price jump: false
+  raw price changed by adjustment: false
+  blocked window approximated: false
+  universe blocked by one security's action: false
+  corporate action overwritten: false
