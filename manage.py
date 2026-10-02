@@ -5,6 +5,8 @@ Commands:
   sources                   list registered sources
   load-equity-list FILE     load NSE's list of listed securities (EQUITY_L.csv)
   ingest-prices FILE [...]  run NSE bhavcopy files (.csv or .zip) through the trust chain
+  load-corporate-actions FILE   load NSE's corporate actions file (CF-CA-equities-*.csv)
+  compare-series SYMBOL START END  raw vs corporate-action-adjusted closes (dates YYYY-MM-DD)
   report                    show what is in the database
 
 Files are downloaded by hand from nseindia.com into data/inbox. The time a
@@ -19,8 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from core.database import connect, migrate  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
+from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
 from ingestion.market_adapters import ingest_market_file  # noqa: E402
+from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
+from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
 
 
@@ -75,6 +80,47 @@ def ingest_prices(args):
         raise SystemExit(f"{failed} file(s) were not ingested - see the messages above")
 
 
+def load_ca(args):
+    if len(args) != 1:
+        raise SystemExit("Usage: python manage.py load-corporate-actions FILE")
+    log = setup_logging()
+    conn = open_db()
+    result = load_corporate_actions(conn, args[0], datetime.now(timezone.utc))
+    log.info("Corporate actions: %s", result)
+    conn.close()
+
+
+def compare_series(args):
+    if len(args) != 3:
+        raise SystemExit("Usage: python manage.py compare-series SYMBOL START END")
+    symbol, start, end = args
+    conn = open_db()
+    isin = resolve(conn, symbol, end, alias_type="nse_symbol")
+    raw = raw_series(conn, isin, start, end)
+    try:
+        adjusted = adjusted_series(conn, isin, start, end)
+    except AdjustmentBlocked as e:
+        adjusted = None
+        print(f"Adjusted series BLOCKED: {e}")
+    actions = conn.execute(
+        "SELECT ex_date, action_type, treatment, shares_before, shares_after, terms_text FROM corporate_actions"
+        " WHERE isin = ? AND ex_date > ? AND ex_date <= ? ORDER BY ex_date", [isin, start, end]).fetchall()
+    print(f"{symbol} ({isin}) from {start} to {end}")
+    for ex_date, kind, treatment, before, after, terms in actions:
+        ratio = f" {before}->{after} shares" if before else ""
+        print(f"  action on {ex_date}: {kind} [{treatment}]{ratio}  ({terms})")
+    print(f"  {'date':<12}{'raw close':>12}{'raw move':>10}{'adjusted':>12}{'adj move':>10}")
+    previous = None
+    for i, row in enumerate(raw.rows):
+        adj = adjusted.rows[i][4] if adjusted else None
+        raw_move = f"{row[4] / previous[0] - 1:+.1%}" if previous else ""
+        adj_move = f"{adj / previous[1] - 1:+.1%}" if previous and adj is not None else ""
+        adj_text = f"{adj:.2f}" if adj is not None else "-"
+        print(f"  {row[0]:<12}{row[4]:>12.2f}{raw_move:>10}{adj_text:>12}{adj_move:>10}")
+        previous = (row[4], adj)
+    conn.close()
+
+
 def report(args):
     conn = open_db()
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
@@ -84,6 +130,10 @@ def report(args):
     print(f"Trusted daily prices:      {one('SELECT COUNT(*) FROM trusted_prices')}")
     first, last = conn.execute("SELECT MIN(trade_date), MAX(trade_date) FROM trusted_prices").fetchone()
     print(f"Trading dates covered:     {first} to {last}")
+    print(f"Corporate actions:         {one('SELECT COUNT(*) FROM corporate_actions')}")
+    for treatment, n in conn.execute(
+            "SELECT treatment, COUNT(*) FROM corporate_actions GROUP BY 1 ORDER BY 2 DESC"):
+        print(f"   {treatment:<28} {n}")
     print(f"Quarantined price rows:    {one('SELECT COUNT(*) FROM quarantine')}")
     for stage, n in conn.execute(
             "SELECT failed_stage, COUNT(*) FROM quarantine GROUP BY 1 ORDER BY 2 DESC"):
@@ -100,6 +150,8 @@ COMMANDS = {
     "sources": show_sources,
     "load-equity-list": load_list,
     "ingest-prices": ingest_prices,
+    "load-corporate-actions": load_ca,
+    "compare-series": compare_series,
     "report": report,
 }
 

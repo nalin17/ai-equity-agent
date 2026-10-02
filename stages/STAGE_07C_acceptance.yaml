@@ -1,0 +1,20 @@
+stage: "07C - NSE corporate actions file reader"
+status: PROTOTYPE
+architecture: [6C, 6C.2, 4, 40G.2, ADR-002]
+proven:
+  - Only mechanically complete wordings produce factors; 27 real NSE wordings classified as expected (tested)
+  - Split face values must agree with the FACE VALUE column ('from' before the ex-date, 'to' after); otherwise unknown (tested)
+  - Rows attach to companies by symbol as of the ex-date with a company-name cross-check; failures are rejected and recorded (tested)
+  - Same-day rows are combined; contradictory same-day ratios become unknown (tested)
+  - Recorded actions are never overwritten; a contradicted split is recorded as a conflict and blocks the window (tested)
+  - "Real data: NSE file 02-Jul-2026 to 02-Oct-2026 - 1217 rows, 33 out of scope, 1182 actions (1122 no adjustment, 43 blocked, 17 factor), 0 rejected, 0 conflicts (checked on a copy of the project database)"
+not_claimed:
+  bonus and split wording conventions verified on real prices: false
+  rights, special dividends, mergers or demergers adjusted: false
+  corporate actions filtered by announcement date for replay: false
+  automated download: false
+negative_assertions:
+  unrecognised wording guessed: false
+  factor derived from prices: false
+  recorded action overwritten: false
+  row attached to a company by name alone: false
