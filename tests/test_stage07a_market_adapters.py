@@ -163,7 +163,20 @@ def test_each_run_records_its_provider(conn, tmp_path):
     report = ingest_market_file(conn, write(tmp_path, "u.csv", udiff_text()), RETRIEVED, raw_dir=tmp_path / "raw")
     row = conn.execute("SELECT provider, rows_in_file, rows_out_of_scope, scope_rule FROM adapter_runs"
                        " WHERE run_id = ?", [report["run_id"]]).fetchone()
-    assert row == ("nse_cm_bhavcopy_udiff", 3, 1, "SctySrs in ['EQ']")
+    assert row == ("nse_cm_bhavcopy_udiff", 3, 1, "SctySrs in ['EQ'] and ISIN not starting with ['INF']")
+
+
+def test_etfs_and_fund_units_are_out_of_scope_not_quarantined(conn, tmp_path):
+    # ADR-003: found on the first real NSE file - 349 ETFs trade in the EQ series.
+    etf = ("GOLDBEES", "EQ", "INF204KB17I5", "2024-03-14", "60.00", "61.00", "59.50", "60.50", "100000")
+    for text, name in ((udiff_text(DAY + [etf]), "u.csv"), (legacy_text(DAY + [etf]), "l.csv")):
+        c = connect(":memory:")
+        migrate(c)
+        sync_sources(c)
+        load_equity_list(c, write(tmp_path, f"list_{name}", EQUITY_LIST), RETRIEVED, raw_dir=tmp_path / "raw")
+        report = ingest_market_file(c, write(tmp_path, name, text), RETRIEVED, raw_dir=tmp_path / "raw")
+        assert (report["rows_trusted"], report["rows_out_of_scope"], report["rows_quarantined"]) == (2, 2, 0)
+        c.close()
 
 
 # ---- 40G.2: formats change loudly ----

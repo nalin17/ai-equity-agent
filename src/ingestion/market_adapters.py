@@ -39,13 +39,20 @@ class Provider:
     scope_values: frozenset
     mapping: dict          # canonical column -> provider column
     date_format: str       # strptime format of the provider's date column; "" means already YYYY-MM-DD
+    excluded_isin_prefixes: frozenset = frozenset()  # instrument classes declared out of scope
 
     @property
     def scope_rule(self):
-        return f"{self.scope_column} in {sorted(self.scope_values)}"
+        rule = f"{self.scope_column} in {sorted(self.scope_values)}"
+        if self.excluded_isin_prefixes:
+            rule += f" and ISIN not starting with {sorted(self.excluded_isin_prefixes)}"
+        return rule
 
     def in_scope(self, row):
-        return (row.get(self.scope_column) or "").strip() in self.scope_values
+        if (row.get(self.scope_column) or "").strip() not in self.scope_values:
+            return False
+        isin = (row.get(self.mapping["isin"]) or "").strip()
+        return not any(isin.startswith(p) for p in self.excluded_isin_prefixes)
 
     def to_canonical(self, row):
         rec = {c: (row.get(self.mapping[c]) or "").strip() for c in CANONICAL_COLUMNS}
@@ -57,10 +64,14 @@ class Provider:
         return rec
 
 
+# ADR-003: equity research covers company shares only. ISINs starting with INF
+# are mutual-fund units and ETFs: they trade in the EQ series but are not companies.
+NOT_COMPANY_SHARES = frozenset({"INF"})
+
 # NSE capital-market bhavcopy, the format used until July 2024.
 NSE_CM_LEGACY = Provider(
     name="nse_cm_bhavcopy_legacy",
-    version="1",
+    version="2",
     source_id="nse_bhavcopy_equity",
     required_columns=("SYMBOL", "SERIES", "OPEN", "HIGH", "LOW", "CLOSE", "TOTTRDQTY", "TIMESTAMP", "ISIN"),
     scope_column="SERIES",
@@ -68,12 +79,13 @@ NSE_CM_LEGACY = Provider(
     mapping={"symbol": "SYMBOL", "isin": "ISIN", "trade_date": "TIMESTAMP", "open": "OPEN",
              "high": "HIGH", "low": "LOW", "close": "CLOSE", "volume": "TOTTRDQTY"},
     date_format="%d-%b-%Y",
+    excluded_isin_prefixes=NOT_COMPANY_SHARES,
 )
 
 # NSE capital-market bhavcopy in the UDiFF format, used from July 2024.
 NSE_CM_UDIFF = Provider(
     name="nse_cm_bhavcopy_udiff",
-    version="1",
+    version="2",
     source_id="nse_bhavcopy_equity",
     required_columns=("TradDt", "ISIN", "TckrSymb", "SctySrs", "OpnPric", "HghPric", "LwPric",
                       "ClsPric", "TtlTradgVol"),
@@ -82,6 +94,7 @@ NSE_CM_UDIFF = Provider(
     mapping={"symbol": "TckrSymb", "isin": "ISIN", "trade_date": "TradDt", "open": "OpnPric",
              "high": "HghPric", "low": "LwPric", "close": "ClsPric", "volume": "TtlTradgVol"},
     date_format="",
+    excluded_isin_prefixes=NOT_COMPANY_SHARES,
 )
 
 PROVIDERS = (NSE_CM_LEGACY, NSE_CM_UDIFF)
