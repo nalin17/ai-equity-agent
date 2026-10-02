@@ -1,0 +1,25 @@
+stage: "07D - Identity bridges (ISIN changes at corporate actions)"
+status: ACCEPTED_IDENTITY_BRIDGE_BASELINE
+architecture: [6D, 6C.1, 4, 47 criterion 65, 40B step 6, ADR-002]
+proven:
+  - A bridge is created only with a recorded split or bonus, exact symbol match, the expected series, exactly one ISIN on each side and name continuity in the provider's own files (tested)
+  - Each refusal writes nothing - no bridge, no entity, no event (tested)
+  - The old ISIN is accepted only through the bridge, only for that symbol, only before the ex-date (tested)
+  - Raw rows keep their own ISIN; resolve() never maps one ISIN to the other; the change is a dated isin_change event (tested)
+  - A split or bonus inside a window with no earlier prices now fails closed instead of shortening the window (tested; fixes a gap found on real data)
+  - Retries re-run only the quarantined rows asked for, from the stored raw file; history is kept (tested)
+  - "Real data: TAALTECH traded as INE524T01011 until 2026-09-21 and as INE524T01029 from its 1-to-5 split on 2026-09-22; bridge created from NSE's own files; raw close 5714.60 -> 1185.40 (-79.3%), adjusted 1142.92 -> 1185.40 (+3.7%)"
+  - "Real data: 3 pre-split TAALTECH rows retried and trusted; TCC (split 2026-09-04) fails closed because its ex-date prices are not loaded"
+not_claimed:
+  bridges for TCC, TDPOWERSYS, CORDELIA (their ex-date price files are not loaded): false
+  bridges for files without a security-name column (legacy NSE format): false
+  ISIN changes not tied to a split or bonus: false
+  historical symbol changes loaded: false
+  delisted companies loaded: false
+negative_assertions:
+  global ISIN equivalence created: false
+  raw row rewritten to another ISIN: false
+  symbol-only bridge created: false
+  window silently shortened: false
+  factor derived from prices: false
+  row quarantined twice by a retry: false

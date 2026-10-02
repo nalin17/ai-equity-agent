@@ -119,10 +119,17 @@ def check_entity(conn, rec):
     except EntityError as e:
         raise RecordRejected(stage, str(e)) from None
     if symbol_isin != rec["isin"]:
-        raise RecordRejected(
-            stage,
-            f"symbol {rec['symbol']!r} meant {symbol_isin} on {rec['trade_date']}, but the row says {rec['isin']}",
-        )
+        # 6D: an old ISIN is accepted ONLY through a recorded, event-scoped identity
+        # bridge for this exact symbol, and only before that event's ex-date.
+        bridged = conn.execute(
+            "SELECT 1 FROM identity_bridges WHERE old_isin = ? AND new_isin = ? AND symbol = ?"
+            " AND ? < ex_date", [rec["isin"], symbol_isin, rec["symbol"], rec["trade_date"]],
+        ).fetchone()
+        if not bridged:
+            raise RecordRejected(
+                stage,
+                f"symbol {rec['symbol']!r} meant {symbol_isin} on {rec['trade_date']}, but the row says {rec['isin']}",
+            )
 
 
 def price_values(rec):
@@ -168,14 +175,16 @@ def ingest_price_file(conn, source_id, file_path, retrieved_at,
 
 
 def ingest_records(conn, source_id, raw_file_path, records, retrieved_at,
-                   published_at=None, publication_evidence=None, raw_dir=None, on_run=None):
+                   published_at=None, publication_evidence=None, raw_dir=None, on_run=None,
+                   existing_artifact_id=None):
     """Run records already mapped by an adapter through the trust chain.
 
     records: (row number in the raw file, the row exactly as received, the same
     row in the canonical format). The RAW file is what is stored and hashed, so
     provenance points at the bytes the provider published, and quarantine keeps
     the row exactly as received. on_run(conn, run_id), if given, records extra
-    details inside the same transaction.
+    details inside the same transaction. existing_artifact_id re-runs rows of a
+    raw file that is already stored (a retry) instead of storing it again.
 
     Everything happens in one transaction: either the whole file is recorded
     (trusted rows, quarantined rows, provenance) or nothing is.
@@ -187,8 +196,12 @@ def ingest_records(conn, source_id, raw_file_path, records, retrieved_at,
         raise NoDataError(f"{raw_file_path}: no records - nothing is stored")
 
     def work(c):
-        artifact_id, sha = store_raw_artifact(c, source_id, raw_file_path, retrieved_at,
-                                              published_at, publication_evidence, raw_dir)
+        if existing_artifact_id is None:
+            artifact_id, sha = store_raw_artifact(c, source_id, raw_file_path, retrieved_at,
+                                                  published_at, publication_evidence, raw_dir)
+        else:
+            artifact_id = existing_artifact_id
+            sha = c.execute("SELECT sha256 FROM raw_artifacts WHERE artifact_id = ?", [artifact_id]).fetchone()[0]
         run_id = c.execute(
             "INSERT INTO ingestion_runs (artifact_id, pipeline_version, rows_total, rows_trusted,"
             " rows_duplicate, rows_quarantined, recorded_at) VALUES (?, ?, ?, 0, 0, 0, ?)",

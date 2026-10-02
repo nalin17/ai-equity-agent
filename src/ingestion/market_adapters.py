@@ -40,6 +40,7 @@ class Provider:
     mapping: dict          # canonical column -> provider column
     date_format: str       # strptime format of the provider's date column; "" means already YYYY-MM-DD
     excluded_isin_prefixes: frozenset = frozenset()  # instrument classes declared out of scope
+    name_column: str = ""  # the provider's security-name column, if it has one (used only for 6D evidence)
 
     @property
     def scope_rule(self):
@@ -95,6 +96,7 @@ NSE_CM_UDIFF = Provider(
              "high": "HghPric", "low": "LwPric", "close": "ClsPric", "volume": "TtlTradgVol"},
     date_format="",
     excluded_isin_prefixes=NOT_COMPANY_SHARES,
+    name_column="FinInstrmNm",
 )
 
 PROVIDERS = (NSE_CM_LEGACY, NSE_CM_UDIFF)
@@ -141,6 +143,77 @@ def detect_provider(header, providers=PROVIDERS):
             "If NSE changed its format, the adapter must be updated - checks are never loosened (40G.2)."
         )
     return matches[0]
+
+
+def provider_named(name, providers=PROVIDERS):
+    matches = [p for p in providers if p.name == name]
+    if len(matches) != 1:
+        raise AdapterError(f"Unknown provider {name!r}")
+    return matches[0]
+
+
+def run_rows(conn, run_id):
+    """Re-read the stored raw file of an ingestion run with the provider it used.
+
+    Returns (provider, [(row_number, raw_row, canonical_row, security_name)]) for
+    in-scope rows. Used as identity evidence (6D) and for retries - never for prices.
+    """
+    found = conn.execute(
+        "SELECT a.stored_path, r.artifact_id FROM ingestion_runs r JOIN raw_artifacts a"
+        " ON a.artifact_id = r.artifact_id WHERE r.run_id = ?", [run_id]).fetchone()
+    if found is None:
+        raise AdapterError(f"Unknown ingestion run {run_id}")
+    provider_name = conn.execute(
+        "SELECT provider FROM adapter_runs WHERE run_id = ? UNION SELECT provider FROM retry_runs"
+        " WHERE run_id = ?", [run_id, run_id]).fetchone()
+    if provider_name is None:
+        raise AdapterError(f"Run {run_id} was not read by a market adapter")
+    provider = provider_named(provider_name[0])
+    _, rows = read_raw_table(found[0])
+    out = []
+    for row_number, row in rows:
+        if provider.in_scope(row):
+            name = (row.get(provider.name_column) or "").strip() if provider.name_column else ""
+            out.append((row_number, row, provider.to_canonical(row), name))
+    return provider, out
+
+
+def retry_quarantined(conn, artifact_id, reason, only_isins=None):
+    """Run quarantined rows of an already-stored raw file through the trust chain again.
+
+    Used after reference data has grown (for example an identity bridge). Only
+    rows for only_isins are retried when it is given, so rows that still cannot
+    pass are not quarantined twice. Rows already trusted are not touched;
+    earlier quarantine records stay as history.
+    """
+    if not reason or not reason.strip():
+        raise AdapterError("A retry must state its reason")
+    artifact = conn.execute(
+        "SELECT source_id, stored_path, retrieved_at, published_at, publication_evidence FROM raw_artifacts"
+        " WHERE artifact_id = ?", [artifact_id]).fetchone()
+    if artifact is None:
+        raise AdapterError(f"Unknown raw artifact {artifact_id}")
+    source_id, stored_path, retrieved_at, published_at, evidence = artifact
+    runs = [r[0] for r in conn.execute("SELECT run_id FROM ingestion_runs WHERE artifact_id = ?", [artifact_id])]
+    if not runs:
+        raise AdapterError(f"Artifact {artifact_id} was never ingested as prices")
+    marks = ", ".join("?" * len(runs))
+    quarantined = {r[0] for r in conn.execute(f"SELECT row_number FROM quarantine WHERE run_id IN ({marks})", runs)}
+    trusted = {r[0] for r in conn.execute(f"SELECT row_number FROM price_provenance WHERE run_id IN ({marks})", runs)}
+    provider, rows = run_rows(conn, runs[0])
+    records = [(n, raw, canonical) for n, raw, canonical, _ in rows if n in quarantined - trusted
+               and (only_isins is None or canonical["isin"] in only_isins)]
+    if not records:
+        return {"artifact_id": artifact_id, "rows_retried": 0}
+
+    def on_run(c, run_id):
+        c.execute("INSERT INTO retry_runs VALUES (?, ?, ?, ?, ?, ?)",
+                  [run_id, artifact_id, provider.name, len(records), reason.strip(), now_utc()])
+
+    report = ingest_records(conn, source_id, stored_path, records, retrieved_at, published_at, evidence,
+                            on_run=on_run, existing_artifact_id=artifact_id)
+    report.update(rows_retried=len(records))
+    return report
 
 
 def ingest_market_file(conn, path, retrieved_at, published_at=None, publication_evidence=None,

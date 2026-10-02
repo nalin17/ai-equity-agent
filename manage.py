@@ -7,6 +7,7 @@ Commands:
   ingest-prices FILE [...]  run NSE bhavcopy files (.csv or .zip) through the trust chain
   load-corporate-actions FILE   load NSE's corporate actions file (CF-CA-equities-*.csv)
   compare-series SYMBOL START END  raw vs corporate-action-adjusted closes (dates YYYY-MM-DD)
+  bridge-isins              bridge ISIN changes at recorded splits/bonuses (6D), then retry quarantined rows
   report                    show what is in the database
 
 Files are downloaded by hand from nseindia.com into data/inbox. The time a
@@ -22,11 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from core.database import connect, migrate  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
-from ingestion.market_adapters import ingest_market_file  # noqa: E402
+from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
 from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
+from universe.identity_bridges import BridgeRefused, bridge_candidates, create_bridge  # noqa: E402
 
 
 def open_db():
@@ -96,7 +98,7 @@ def compare_series(args):
     symbol, start, end = args
     conn = open_db()
     isin = resolve(conn, symbol, end, alias_type="nse_symbol")
-    raw = raw_series(conn, isin, start, end)
+    raw = raw_series(conn, isin, start, end, follow_bridges=True)
     try:
         adjusted = adjusted_series(conn, isin, start, end)
     except AdjustmentBlocked as e:
@@ -109,15 +111,47 @@ def compare_series(args):
     for ex_date, kind, treatment, before, after, terms in actions:
         ratio = f" {before}->{after} shares" if before else ""
         print(f"  action on {ex_date}: {kind} [{treatment}]{ratio}  ({terms})")
-    print(f"  {'date':<12}{'raw close':>12}{'raw move':>10}{'adjusted':>12}{'adj move':>10}")
+    for bridge_id, old_isin, ex_date in conn.execute(
+            "SELECT bridge_id, old_isin, ex_date FROM identity_bridges WHERE new_isin = ? AND ex_date > ?"
+            " AND ex_date <= ?", [isin, start, end]):
+        print(f"  identity bridge {bridge_id}: before {ex_date} this security traded as {old_isin}")
+    print(f"  {'date':<12}{'isin':<14}{'raw close':>12}{'raw move':>10}{'adjusted':>12}{'adj move':>10}")
     previous = None
     for i, row in enumerate(raw.rows):
         adj = adjusted.rows[i][4] if adjusted else None
         raw_move = f"{row[4] / previous[0] - 1:+.1%}" if previous else ""
         adj_move = f"{adj / previous[1] - 1:+.1%}" if previous and adj is not None else ""
         adj_text = f"{adj:.2f}" if adj is not None else "-"
-        print(f"  {row[0]:<12}{row[4]:>12.2f}{raw_move:>10}{adj_text:>12}{adj_move:>10}")
+        print(f"  {row[0]:<12}{raw.row_isins[i]:<14}{row[4]:>12.2f}{raw_move:>10}{adj_text:>12}{adj_move:>10}")
         previous = (row[4], adj)
+    conn.close()
+
+
+def bridge_isins(args):
+    log = setup_logging()
+    conn = open_db()
+    created, refused = [], {}
+    for symbol, ex_date in bridge_candidates(conn):
+        try:
+            created.append(create_bridge(conn, symbol, ex_date))
+        except BridgeRefused as e:
+            refused[f"{symbol} {ex_date}"] = str(e)
+    for b in created:
+        log.info("Bridge %s: %s %s -> %s at the %s on %s", b["bridge_id"], b["symbol"], b["old_isin"],
+                 b["new_isin"], b["action"], b["ex_date"])
+    log.info("Bridges created: %s | no bridge (evidence incomplete): %s", len(created), len(refused))
+    for key, reason in refused.items():
+        print(f"   no bridge  {key}: {reason}")
+    if created:
+        old_isins = {b["old_isin"] for b in created}
+        artifacts = [r[0] for r in conn.execute(
+            "SELECT DISTINCT r.artifact_id FROM quarantine q JOIN ingestion_runs r ON r.run_id = q.run_id"
+            " JOIN adapter_runs a ON a.run_id = r.run_id ORDER BY 1")]
+        for artifact_id in artifacts:
+            result = retry_quarantined(conn, artifact_id, "identity bridges recorded (6D)", only_isins=old_isins)
+            if result["rows_retried"]:
+                log.info("Retry of artifact %s: %s", artifact_id,
+                         {k: result.get(k) for k in ("rows_retried", "rows_trusted", "rows_quarantined")})
     conn.close()
 
 
@@ -134,13 +168,22 @@ def report(args):
     for treatment, n in conn.execute(
             "SELECT treatment, COUNT(*) FROM corporate_actions GROUP BY 1 ORDER BY 2 DESC"):
         print(f"   {treatment:<28} {n}")
-    print(f"Quarantined price rows:    {one('SELECT COUNT(*) FROM quarantine')}")
+    print(f"Quarantined price rows:    {one('SELECT COUNT(*) FROM quarantine')}  (all runs, kept as history)")
+    print("   still unresolved (distinct rows): " + str(one(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT r.artifact_id, q.row_number FROM quarantine q"
+        " JOIN ingestion_runs r ON r.run_id = q.run_id) x WHERE NOT EXISTS (SELECT 1 FROM price_provenance p"
+        " JOIN ingestion_runs r2 ON r2.run_id = p.run_id WHERE r2.artifact_id = x.artifact_id"
+        " AND p.row_number = x.row_number)")))
+    print(f"Identity bridges (6D):     {one('SELECT COUNT(*) FROM identity_bridges')}")
     for stage, n in conn.execute(
             "SELECT failed_stage, COUNT(*) FROM quarantine GROUP BY 1 ORDER BY 2 DESC"):
         print(f"   {stage:<28} {n}")
-    print("Most common quarantine reasons:")
+    print("Most common reasons among unresolved rows:")
     for reason, n in conn.execute(
-            "SELECT substr(reason, 1, 90), COUNT(*) FROM quarantine GROUP BY 1 ORDER BY 2 DESC LIMIT 5"):
+            "SELECT substr(q.reason, 1, 90), COUNT(DISTINCT r.artifact_id || ':' || q.row_number) FROM quarantine q"
+            " JOIN ingestion_runs r ON r.run_id = q.run_id WHERE NOT EXISTS (SELECT 1 FROM price_provenance p"
+            " JOIN ingestion_runs r2 ON r2.run_id = p.run_id WHERE r2.artifact_id = r.artifact_id"
+            " AND p.row_number = q.row_number) GROUP BY 1 ORDER BY 2 DESC LIMIT 5"):
         print(f"   {n:>6}  {reason}")
     conn.close()
 
@@ -152,6 +195,7 @@ COMMANDS = {
     "ingest-prices": ingest_prices,
     "load-corporate-actions": load_ca,
     "compare-series": compare_series,
+    "bridge-isins": bridge_isins,
     "report": report,
 }
 

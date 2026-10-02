@@ -1,6 +1,6 @@
 stage: "07B - Corporate-action adjustment"
-status: PROTOTYPE
-architecture: [6C, 6C.1, 6C.2, 40A item 13, 40B step 6 (second half), ADR-002]
+status: ACCEPTED_CORPORATE_ACTION_ADJUSTMENT_BASELINE
+architecture: [6C, 6C.1, 6C.2, 6D, 40A item 13, 40B step 6 (second half), ADR-002]
 proven:
   - A known 1-to-5 split gives a continuous adjusted series and a discontinuous raw series (tested on sample data)
   - Simple bonus and reverse split are back-adjusted from their verified share ratios (tested)
@@ -10,9 +10,9 @@ proven:
   - A price jump with no recorded action is never adjusted (tested); the factor module cannot read prices (static test)
   - Raw prices are unchanged by adjustment; the adjusted series carries basis, policy version and actions applied (tested)
   - The policy table states intent and implemented treatment for all ten action types, matching 6C (tested)
+  - "Real data: TAALTECH 1-to-5 split on 2026-09-22 - raw close 5714.60 -> 1185.40 (-79.3%), adjusted 1142.92 -> 1185.40 (+3.7%)"
+  - "Real data: GOODLUCK bonus 2:1 on 2026-08-21 - raw close 1439.40 -> 490.90 (-65.9%), adjusted 479.80 -> 490.90 (+2.3%)"
 not_claimed:
-  real split verified on real NSE prices: false
-  NSE corporate actions file parsed automatically (6C.2): false
   rights issues adjusted (official factor or TERP): false
   special dividends adjusted: false
   merger successor splice: false
