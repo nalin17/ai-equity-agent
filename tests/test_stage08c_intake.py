@@ -161,11 +161,13 @@ def test_the_checklist_lists_missing_weekday_price_files(env):
 # ---- ADR-004: no automated collection ----
 
 def test_no_code_contacts_a_website():
-    # ADR-004: NSE's terms of use prohibit automated collection. No module may open a network connection.
+    # ADR-004: NSE's terms of use prohibit automated collection. No module may open a network connection,
+    # except the GDELT news fetcher allowed by ADR-005 (its limits are tested in test_stage10_news.py).
     pattern = re.compile(r"^\s*(import|from)\s+(urllib|requests|http|httpx|aiohttp|socket|selenium|playwright"
                          r"|mechanize|scrapy|ftplib|smtplib)\b", re.M)
     files = list((PROJECT_ROOT / "src").rglob("*.py")) + [PROJECT_ROOT / "manage.py"]
-    offenders = [str(p) for p in files if pattern.search(p.read_text(encoding="utf-8"))]
+    fetcher = PROJECT_ROOT / "src" / "ingestion" / "news_fetch.py"
+    offenders = [str(p) for p in files if p != fetcher and pattern.search(p.read_text(encoding="utf-8"))]
     assert offenders == []
 
 

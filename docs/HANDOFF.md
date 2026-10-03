@@ -4,8 +4,9 @@ Written 2026-10-02 at the end of a long build chat, so that a new chat can conti
 without losing anything. Read this whole file before doing anything else.
 
 State at handoff: Stage 9 committed as cf1c948, CI green, 393 tests passing,
-database at schema version 14. The next build is Stage 10 = architecture 40B step 9
-(News / External Adapter). See section 9.
+database at schema version 14. Updated 2026-10-03 after Stage 10 (news from GDELT,
+ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architecture
+40B step 10 (Sentiment Adapter). See section 9.
 
 ---
 
@@ -35,6 +36,7 @@ database at schema version 14. The next build is Stage 10 = architecture 40B ste
 | Tests | pytest; `pytest.ini`: pythonpath = src, testpaths = tests, addopts = -p no:cacheprovider |
 | CI | `.github/workflows/tests.yml`, Python 3.14, runs pytest on every push |
 | Dependencies | requirements.txt: pytest, pyyaml (nothing else) |
+| Internet use | only `python manage.py fetch-news` - GDELT news, ADR-005; everything else is hand downloads |
 | Check CI | `curl -s "https://api.github.com/repos/nalin17/ai-equity-agent/actions/runs?per_page=1"` |
 
 ## 3. Authority documents
@@ -45,7 +47,8 @@ database at schema version 14. The next build is Stage 10 = architecture 40B ste
 - `docs/Master_Architecture_v1_11.md` - the original, kept for history.
 - Decisions: `docs/decisions/ADR-001-sqlite.md`, `ADR-002-independent-build.md`,
   `ADR-003-etf-scope.md` (ETFs/mutual-fund units, ISIN prefix INF, are out of scope),
-  `ADR-004-data-intake.md` (no scraping; hand downloads; licensed sources for scale).
+  `ADR-004-data-intake.md` (no scraping; hand downloads; licensed sources for scale),
+  `ADR-005-news-from-gdelt.md` (news from GDELT, fetched by fetch-news - the only network code).
 - Scope (architecture section 3): one exchange (NSE, India), 30-company focus cohort
   first. Other countries' stocks need an architecture change request; global FX/rates
   are allowed only as macro context (the "Sector / macro" domain is Core).
@@ -56,7 +59,8 @@ database at schema version 14. The next build is Stage 10 = architecture 40B ste
    collection. Do NOT build scrapers, do not bulk-download through the browser, do not
    use nsepython/jugaad-data or "NSE scraper" APIs. A static test
    (`tests/test_stage08c_intake.py::test_no_code_contacts_a_website`) fails if any
-   module imports a network library. A licensed API would need a new ADR-005 first.
+   module imports a network library. A licensed API would need a new ADR first. The one
+   exception (ADR-005): src/ingestion/news_fetch.py may call api.gdeltproject.org for news.
 2. TradingView data is display-only (non-display/machine use prohibited) - not a source.
 3. The assistant never downloads files itself without explicit permission; reading a
    page in the browser to design code is fine. The owner downloads; the assistant reads
@@ -128,13 +132,15 @@ database at schema version 14. The next build is Stage 10 = architecture 40B ste
 | 8C | 7e0b679 | ADR-004 | `checklist` page of links + `ingest-inbox` one-command loader; no network code |
 | 8D | 7da4f0b | 40B step 7, 5 | NBFCs, life insurers, real 'Revision' rows, revisions recorded as dated corrections |
 | 9 | cf1c948 | 40B step 8, 4A, 4D | NSE corporate announcements; one release = one event (rule an-dedup-1); subject->type mapping an-types-1 |
+| 10 | see git log | 40B step 9, 4A, 4B.4, ADR-005 | news headlines from GDELT; extraction confidence stored apart from investment confidence; rules nw-entity-1 (company links) and nw-dedup-1 (copies) |
 
 Acceptance records with exact claims, not-claimed items and negative assertions are in
 `stages/STAGE_*_acceptance.yaml`.
 
 ## 7. Current state (verified at handoff)
 
-- 393 tests pass; schema version 14; 28 migration files (0001-0014 up/down).
+- At Stage 9: 393 tests; schema version 14; 28 migration files. After Stage 10: 482 tests;
+  schema version 15; 30 migration files (0001-0015 up/down); news counts: `python manage.py report`.
 - Data loaded: 2,594 entities (EQUITY_L); 32 raw files; 13,806 trusted daily prices
   (6 bhavcopies, 20-Aug to 01-Oct-2026); 1,182 corporate actions; 1 identity bridge
   (TAALTECH); results listings 5 (old page) + 49 (integrated); 17 results files;
@@ -151,12 +157,14 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
   load-corporate-actions, compare-series SYMBOL START END, bridge-isins,
   load-results-index FILE..., load-results FILE..., show-fundamentals SYMBOL [PERIOD_END],
   load-announcements FILE..., show-events SYMBOL [FROM] [TO],
+  fetch-news [--symbols A,B] [--from DATE], show-news SYMBOL [FROM] [TO],
   ingest-inbox [--without-listing] [FOLDER], checklist [LISTING...] [--symbols A,B]
   [--since DATE] [--prices-from DATE], report.
 - `src/core/` - config, database (`connect`, `migrate`, `rollback`, `run_in_transaction`,
   `now_utc`), dates (`strict_iso_date`), logging_setup, status (2A vocabulary,
   `load_acceptance_records`; status must be a fixed status or ACCEPTED_<X>_BASELINE).
-- `src/data_quality/` - missing_data (`MissingClass`), trust_chain (`NoDataError` ...).
+- `src/data_quality/` - missing_data (`MissingClass`), trust_chain (`NoDataError` ...),
+  extraction_confidence (`ExtractionConfidence`, 4A rule 4).
 - `src/provenance/` - availability (`disposition(claim, decision_time, retrieved_at,
   published_at)`, `PitClaim.CURRENT_DECISION/HISTORICAL_REPLAY`, `Availability`),
   raw_store (`store_raw_artifact`, sha256 dedup), pit_store (`record_fact`,
@@ -167,27 +175,28 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
   `ingest_market_file`, `retry_quarantined`), corporate_actions + nse_corporate_actions
   (`normalise_name`), nse_financial_results (all results formats: OLD_INDAS and
   SEBI_FORMATS IndAS/Banking/NBFC/LI, listings, identities, standalone-only ratios,
-  revisions), intake (checklist + ingest-inbox), nse_announcements (filings, `events()`).
+  revisions), intake (checklist + ingest-inbox), nse_announcements (filings, `events()`),
+  gdelt_news (GDELT articles, news names, `extract()`, `stories()`), news_fetch (the only
+  network code: GDELT requests, spacing, back-off, window splitting).
 - `src/features/price_series.py` - raw/adjusted series.
 - Empty packages reserved for later steps: abstention, calibration, experiments, ledger,
   models, regimes, research, targets, validation.
 
 ## 9. Architecture roadmap (40B) and the next step
 
-Done: steps 1-8. Our stage numbers: step 6 = Stage 7, step 7 = Stage 8/8B/8D,
-step 8 = Stage 9. 8C was the intake tooling.
+Done: steps 1-9. Our stage numbers: step 6 = Stage 7, step 7 = Stage 8/8B/8D,
+step 8 = Stage 9, step 9 = Stage 10. 8C was the intake tooling.
 
-NEXT: Stage 10 = 40B step 9, News / External Adapter.
-Acceptance (40B): "Extraction confidence is stored separately from investment confidence".
-Read sections 4A (event fields: direction, novelty, materiality, source quality,
-expected horizon, extraction confidence), 4D (text is data), 4F.2 (excluded source
-classes), 5B, and 3B before designing. Key open question to research first: which news
-source is legal to use (NSE terms forbid scraping; most news sites forbid it too) -
-look for licensed feeds or sources whose terms allow programmatic use; RSS terms must
-be checked per publisher. Follow the method in section 5 (research real data first).
+NEXT: Stage 11 = 40B step 10, Sentiment Adapter.
+Acceptance (40B): "Features below the liquidity threshold are refused, not down-weighted
+(4B.2)". Read 4B (4B.1-4B.5), 4C, 4E, 5B and 14.0 (investability) before designing.
+Sentiment may use only sentiment-eligible stories (4B.4): Stage 10's 'subject' articles;
+'mentioned' and search-only stories feed attention only. GDELT also offers tone - a model
+output: keep it, never flip it (4B.5). The liquidity threshold needs traded value from
+trusted_prices. Optional: Stage 10B = RBI and SEBI releases (regulatory news; feeds
+checked 02-Oct-2026: SEBI RSS has its latest 30 items with dates only, RBI 10 items).
 
-Then: step 10 Sentiment Adapter (features below a liquidity threshold refused, 4B.2),
-11 Knowledge/Event Hub (one point-in-time evidence object), 12 Real Feature Factory,
+Then: step 11 Knowledge/Event Hub (one point-in-time evidence object), 12 Real Feature Factory,
 13 Real Target Engine, 14 Equity Research Agent v0.1 (first agent), 15 Prediction
 Ledger, 16 Shadow operation, 17-23 resolver, attribution, calibration, drift,
 controlled learning, specialist agents, API.
@@ -221,6 +230,21 @@ BROADCAST DATE/TIME, RECEIPT, DISSEMINATION, DIFFERENCE, ATTACHMENT (no ISIN, no
   and even specific names are reused for different documents days later;
 - the per-announcement XBRL only repeats the listing fields.
 
+News (GDELT DOC 2.0 API, article list, JSON; checked 02-Oct-2026):
+- fields: url, url_mobile, title, seendate (UTC, always on 15-minute marks), socialimage,
+  domain, language, sourcecountry; the search text is NOT in the response (the fetcher
+  records it); at most 250 articles per response; only the last 3 months are searched;
+- headlines arrive tokenised ('66 % returns , small - cap'); English, Hindi, Marathi and
+  Gujarati - other scripts must keep their letters when headlines are compared;
+- a company search returns mostly other stories (HDFC Bank, 1 week: 138 articles, 13
+  stories about the bank); lists of stocks are common - hence rule nw-entity-1;
+- copies: wire stories on two sites, one site's story in two sections, print and web
+  editions, a tips site republishing one article under ~10 addresses over 33 hours;
+- refusals: HTTP 429 'Please limit requests to one every 5 seconds', in waves - even 8
+  seconds after a success; on 03-Oct-2026, after a night of testing, for hours (the
+  fetcher then gives up for the run and stores nothing); also network drop-outs;
+- Business Standard and HT/Mint terms forbid AI use of their content: never open links.
+
 ## 11. Open items, deferred work and things NOT claimed
 
 - Rows refused by an earlier code version cannot be re-read from a stored listing
@@ -232,6 +256,11 @@ BROADCAST DATE/TIME, RECEIPT, DISSEMINATION, DIFFERENCE, ATTACHMENT (no ISIN, no
   materiality and horizon not assessed; unclassified subjects not read from text;
   no BSE cross-exchange syndication.
 - 125 announcement rows (52 symbols) were refused: companies not in EQUITY_L.
+- News (Stage 10): headlines only, article text never read; event type, direction,
+  materiality and horizon not assessed; news repeating an exchange filing not recognised;
+  short forms ('Reliance', 'TCS', 'HDFC') and names only in other scripts not matched;
+  'sources say' stories not screened (4F.2); site quality not assessed; extraction runs not
+  filtered by decision time; only 6 companies have news names (config/news_names.yaml).
 
 ## 12. Data-source research already done (do not repeat)
 
@@ -257,6 +286,14 @@ BROADCAST DATE/TIME, RECEIPT, DISSEMINATION, DIFFERENCE, ATTACHMENT (no ISIN, no
   (Europe annual), ECB and FRED (FX/macro).
 - Recommendation given: stay with hand downloads + checklist for the 30-company cohort;
   NSE research request for history; authorised vendor quote for scale later.
+- News (checked 02/03-Oct-2026): Business Standard's terms forbid automated collection,
+  caching and any AI use (grounding/RAG included); HT Digital (HT, Mint) forbids AI/ML use
+  without a written licence (RSS included); Economic Times blocks automated reading.
+  GDELT: open data, 'unlimited and unrestricted use', cite gdeltproject.org - chosen
+  (ADR-005). Paid news APIs, terms on storage and AI use NOT yet checked: Marketaux from
+  $29/month, NewsData.io from ~$200/month, NewsAPI.org $449/month (free plan for testing
+  only). Regulators: PIB and RBI allow reuse with acknowledgement; SEBI allows linking
+  and asks for an email before republishing.
 
 ## 13. How to start the new chat
 
@@ -265,7 +302,7 @@ Paste this to the new chat:
 > I am continuing my AI equity research agent project at
 > C:\Users\nalin\Projects\ai-equity-agent. Please read docs/HANDOFF.md fully first,
 > then the frozen architecture docs/Master_Architecture_v2_1_1_FROZEN.md sections
-> named there. Verify the current state (git log, tests, database version 14, CI), then
-> continue with Stage 10 (architecture 40B step 9, News / External Adapter) using the
+> named there. Verify the current state (git log, tests, database version 15, CI), then
+> continue with Stage 11 (architecture 40B step 10, Sentiment Adapter) using the
 > same step-by-step method: research real data first, build and test in a scratch copy,
 > give me paste blocks and commands, and verify after I reply "done".

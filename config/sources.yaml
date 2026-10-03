@@ -148,3 +148,19 @@ sources:
     reliability_rating: A
     authentication_method: none (manual browser download)
     schema_description: one row per filing - symbol, company, subject, details, broadcast, receipt and dissemination times, attachment link
+
+  - source_id: gdelt_doc_news
+    provider: The GDELT Project
+    source_class: licensed_vendor
+    data_type: news article metadata - link, headline, site, language, country and the time GDELT first saw each article
+    endpoint: https://api.gdeltproject.org/api/v2/doc/doc (DOC 2.0 API, article list, JSON)
+    authority: secondary
+    license: GDELT open data - unlimited use including commercial; every use must cite the GDELT Project with a link to https://www.gdeltproject.org/ ; article links are never opened (ADR-005)
+    update_frequency: every 15 minutes
+    historical_coverage: rolling last 3 months through the DOC API
+    latency: up to 15 minutes after GDELT sees an article
+    revision_policy: an article is recorded once with the headline GDELT saw; nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: B
+    authentication_method: none (public API; requests spaced and backed off - ADR-005)
+    schema_description: one object per article - url, url_mobile, title, seendate (UTC, 15-minute steps), socialimage, domain, language, sourcecountry

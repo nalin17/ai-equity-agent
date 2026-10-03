@@ -14,6 +14,9 @@ Commands:
   show-fundamentals SYMBOL [PERIOD_END]  list the stored results figures for one company (date YYYY-MM-DD)
   load-announcements FILE [...]  load NSE corporate announcements (CF-AN-equities-*.csv)
   show-events SYMBOL [FROM] [TO]  list one company's events - one per release (dates YYYY-MM-DD)
+  fetch-news [--symbols A,B] [--from YYYY-MM-DD]  fetch news from GDELT for the companies in
+                            config/news_names.yaml - the only command that uses the internet
+  show-news SYMBOL [FROM] [TO]  list one company's news stories - copies of one story shown once
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -24,6 +27,9 @@ Files are downloaded by hand from nseindia.com: NSE's terms of use prohibit
 automated collection (ADR-004). The time a file is ingested is recorded as its
 retrieval time: it is the moment the data verifiably entered this system
 (architecture 5B.2).
+
+News is the one exception: fetch-news asks GDELT, whose terms allow automated use,
+and nothing else (ADR-005). Article links are never opened.
 """
 import sys
 from datetime import datetime, timezone
@@ -32,16 +38,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from core.config import PROJECT_ROOT, load_config  # noqa: E402
-from core.database import connect, migrate  # noqa: E402
+from core.database import connect, migrate, run_in_transaction  # noqa: E402
 from core.dates import strict_iso_date  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
 from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, write_checklist  # noqa: E402
+from ingestion.gdelt_news import ENTITY_RULE, extract, stories, sync_news_names  # noqa: E402
+from ingestion.gdelt_news import DEDUP_RULE as NEWS_DEDUP_RULE  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
+from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_company  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
+from ingestion.nse_financial_results import IST  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
+from provenance.availability import parse_timestamp  # noqa: E402
 from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
 from universe.identity_bridges import BridgeRefused, bridge_candidates, create_bridge  # noqa: E402
@@ -278,6 +289,95 @@ def show_events(args):
     conn.close()
 
 
+def fetch_news(args):
+    usage = "Usage: python manage.py fetch-news [--symbols A,B] [--from YYYY-MM-DD]"
+    options, i = {}, 0
+    while i < len(args):
+        if args[i] in ("--symbols", "--from") and i + 1 < len(args):
+            options[args[i]] = args[i + 1]
+            i += 2
+        else:
+            raise SystemExit(usage)
+    log = setup_logging()
+    conn = open_db()
+    added = sync_news_names(conn)
+    if added:
+        log.info("News names newly recorded: %s", ", ".join(added))
+    companies = conn.execute(
+        "SELECT DISTINCT n.isin, s.alias_value FROM entity_aliases n JOIN entity_aliases s ON s.isin = n.isin"
+        " AND s.alias_type = 'nse_symbol' AND s.valid_to IS NULL WHERE n.alias_type = 'news_name'"
+        " ORDER BY s.alias_value").fetchall()
+    if "--symbols" in options:
+        wanted = options["--symbols"].split(",")
+        unknown = sorted(set(wanted) - {symbol for _, symbol in companies})
+        if unknown:
+            raise SystemExit(f"No news names for {', '.join(unknown)} - add them to config/news_names.yaml")
+        companies = [(isin, symbol) for isin, symbol in companies if symbol in wanted]
+    start = None
+    if "--from" in options:
+        day = strict_iso_date(options["--from"])
+        start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    fetcher = Fetcher(on_wait=lambda seconds, why: log.info("Waiting %.0f seconds: %s", seconds, why))
+    log.info("Fetching news from GDELT for %s companies - at least %.0f seconds between requests",
+             len(companies), MIN_INTERVAL)
+    failed = 0
+    for isin, symbol in companies:
+        begin, end = default_window(conn, isin, datetime.now(timezone.utc))
+        try:
+            for result in fetch_company(conn, fetcher, isin, symbol, start or begin, end, fetched_dir()):
+                problems = result.pop("problems", [])
+                log.info("%s %s: %s", symbol, result.pop("window"), result)
+                for problem in problems:
+                    print(f"     {problem}")
+        except Exception as e:  # report and carry on with the next company; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT FETCHED - %s: %s", symbol, type(e).__name__, e)
+    log.info("GDELT requests: %s (refused and retried: %s). News data: The GDELT Project, gdeltproject.org",
+             fetcher.requests, fetcher.refusals)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} compan{'y was' if failed == 1 else 'ies were'} not fetched - see the"
+                         " messages above; run fetch-news again later")
+
+
+def show_news(args):
+    if not 1 <= len(args) <= 3:
+        raise SystemExit("Usage: python manage.py show-news SYMBOL [FROM] [TO]")
+    start = strict_iso_date(args[1]).isoformat() if len(args) > 1 else "0001-01-01"
+    end = strict_iso_date(args[2]).isoformat() if len(args) > 2 else "9999-12-31"
+    conn = open_db()
+    isins = [r[0] for r in conn.execute(
+        "SELECT DISTINCT isin FROM entity_aliases WHERE alias_type = 'nse_symbol' AND alias_value = ?", [args[0]])]
+    if not isins:
+        raise SystemExit(f"Unknown symbol {args[0]}")
+    run_in_transaction(conn, extract)
+    found = []
+    for isin in isins:
+        for story in stories(conn, datetime.now(timezone.utc), isin=isin):
+            when = parse_timestamp(story["published_at"]).astimezone(IST)
+            if start <= when.date().isoformat() <= end:
+                found.append((when, story, story["companies"].get(isin)))
+    sys.stdout.reconfigure(errors="replace")
+    roles = [held["role"] if held else "search only" for _, _, held in found]
+    print(f"{args[0]}: {len(found)} stories - about it: {roles.count('subject')}, mentioning it:"
+          f" {roles.count('mentioned')}, only returned by its search (not listed): {roles.count('search only')}")
+    print(f"  rules {ENTITY_RULE} and {NEWS_DEDUP_RULE}; times are India time, when each story was proven"
+          " public. News data: The GDELT Project, gdeltproject.org")
+    for when, story, held in found:
+        if held is None:
+            continue
+        how = f"{held['role']} ({held['extraction_confidence']})"
+        copies = len(story["copies"])
+        print(f"  {when:%Y-%m-%d %H:%M}  {how:<47} {story['copies'][0]['domain']}"
+              + (f" +{copies - 1} cop{'y' if copies == 2 else 'ies'}" if copies > 1 else ""))
+        print(f"                    {story['headline'][:110]}")
+    conn.close()
+
+
+def fetched_dir():
+    return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
+
+
 def inbox_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "inbox"
 
@@ -370,6 +470,8 @@ def report(args):
           f"  (figures corrected by revisions: {one('SELECT COALESCE(SUM(facts_corrected), 0) FROM fr_loads')})")
     print(f"Announcements (filings):   {one('SELECT COUNT(*) FROM an_filings')}"
           f"  -> events: {len(events(conn, datetime.now(timezone.utc)))} (rule {DEDUP_RULE})")
+    print(f"News articles (GDELT):     {one('SELECT COUNT(*) FROM nw_articles')}"
+          f"  from {one('SELECT COUNT(*) FROM nw_responses')} responses")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -398,6 +500,8 @@ COMMANDS = {
     "show-fundamentals": show_fundamentals,
     "load-announcements": load_announcement_files,
     "show-events": show_events,
+    "fetch-news": fetch_news,
+    "show-news": show_news,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

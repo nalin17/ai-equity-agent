@@ -18,7 +18,7 @@ valid_from <= date < valid_to (valid_to empty means still valid).
 from core.database import now_utc, run_in_transaction
 from core.dates import strict_iso_date
 
-ALIAS_TYPES = {"nse_symbol", "bse_code", "vendor_id", "company_name"}
+ALIAS_TYPES = {"nse_symbol", "bse_code", "vendor_id", "company_name", "news_name"}
 EVENT_TYPES = {
     "listing", "rename", "symbol_change", "isin_change",
     "merger", "demerger", "delisting", "suspension",

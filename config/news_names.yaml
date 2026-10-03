@@ -1,0 +1,34 @@
+# News names (architecture 4 entity resolution, 4B.4; rule nw-entity-1). Human-owned.
+# The names under which news refers to each company. A news article is linked to a company
+# only through these names - never by guessing - and fetch-news searches GDELT for them.
+# Each name must identify ONE company:
+#   - 'TCS' is not used: in Indian news it also means 'tax collected at source'.
+#   - 'HDFC' alone is not used: it fits HDFC Bank, HDFC Life, HDFC AMC and others.
+# valid_from: the first date the name refers to the company.
+# Recorded names are never silently changed: removing or editing one stops fetch-news.
+
+companies:
+  - symbol: HDFCBANK
+    isin: INE040A01034
+    names: [HDFC Bank]
+    valid_from: 1995-11-08
+  - symbol: TCS
+    isin: INE467B01029
+    names: [Tata Consultancy Services]
+    valid_from: 2004-08-25
+  - symbol: RELIANCE
+    isin: INE002A01018
+    names: [Reliance Industries, RIL]
+    valid_from: 1995-11-29
+  - symbol: BAJFINANCE
+    isin: INE296A01032
+    names: [Bajaj Finance]
+    valid_from: 2003-04-01
+  - symbol: HDFCLIFE
+    isin: INE795G01014
+    names: [HDFC Life]
+    valid_from: 2017-11-17
+  - symbol: VSTTILLERS
+    isin: INE764D01017
+    names: [VST Tillers]
+    valid_from: 2011-06-20

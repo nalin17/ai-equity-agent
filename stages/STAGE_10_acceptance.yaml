@@ -1,0 +1,46 @@
+stage: "10 - News / external adapter (GDELT news headlines)"
+status: ACCEPTED_NEWS_EXTERNAL_BASELINE
+architecture: [40B step 9, 3B, 4, 4A, 4B.4, 4C.1, 4D, 4E, 5B, 40D, ADR-005]
+proven:
+  - Extraction confidence is stored separately from investment confidence; no news table or story carries investment confidence, and no module may mix the two (tested, static test)
+  - Extraction confidence levels are evidence classes defined in one place, never invented probabilities (tested)
+  - Rule nw-entity-1 links an article to a company only through names a person declared (or that company's registered name); 'subject' needs the name in both headline and link, not as one item of a comma list, and no other listed company recognised in the headline (tested)
+  - Five real headlines that first drafts wrongly took as being about one company are named regression tests (4B.4 rule 6)
+  - Recognising another company only ever withholds 'subject'; an article naming no declared company stays unassigned (tested)
+  - A news name must identify one company - not declared twice, not another company's registered name - and recorded names are never silently changed (tested)
+  - Rule nw-dedup-1 collapses copies of one story (same headline word for word in any script, distinctive, within 72 hours of the first copy); stories are derived from what was known at the decision time (tested)
+  - An article is public 15 minutes after GDELT first saw it, or at our retrieval if earlier - never sooner (tested)
+  - Empty responses, GDELT's rate-limit notice and anything not an article list are refused whole - never stored as 'no news' (tested)
+  - A full response (250 articles) is split into smaller windows; one that cannot be split is recorded as incomplete (tested)
+  - Only src/ingestion/news_fetch.py may open a network connection, only to api.gdeltproject.org, without following redirects, at least 20 seconds apart and backing off after refusals (tested, static tests)
+  - After GDELT has refused one request through every wait, the fetcher asks nothing more in that run and stores nothing (tested)
+  - 32 of 32 deliberate faults in the new code were caught by the tests; finding the uncaught ones exposed a real bug (where names overlapped, the shortest won) - fixed and tested
+  - "Real data: 3 GDELT responses fetched 02-Oct-2026 (HDFC Bank 1 week, Reliance Industries 1 week, HDFC Life 4 weeks, Indian outlets) - 340 articles returned, 304 stored (36 returned by two searches, stored once), 0 refused; 61 sites; English 216, Hindi 77, Marathi 6, Gujarati 5"
+  - "Real data: the 304 articles form 273 stories; one tips site carried one article under about ten addresses over 33 hours - one story"
+  - "Real data: 15 articles (14 stories) are about one company - 13 HDFC Bank stories, mostly the appointment of Anup Bagchi as MD and CEO, and 1 Reliance Industries bond issue; every one checked by reading - none wrong; 38 articles only mention a company; 251 name no declared company and stay unassigned"
+  - "Real data: GDELT refused requests in waves (HTTP 429 with 'Please limit requests') even 8 seconds after a success, and on 03-Oct-2026 for hours after a night of testing; one request failed when the internet connection dropped"
+  - "Real data: a real fetch-news run on a copy of the database (03-Oct-2026, VST Tillers) was refused 5 times over 16 minutes and reported NOT FETCHED - nothing stored"
+not_claimed:
+  article text read (only GDELT's headline, link, site, language, country and first-seen time are used): false
+  event type, direction, materiality and expected horizon of news: false
+  news that repeats an exchange filing recognised as not new: false
+  site or source quality per website: false
+  instruction-shaped text detected and recorded against a source (4D rule 4): false
+  unattributed 'sources say' stories recognised (4F.2): false
+  companies found by names nobody declared, by short forms ('Reliance', 'TCS', 'HDFC') or by headlines that name them only in another script: false
+  news older than GDELT's 3-month search window: false
+  calibrated probabilities for extraction confidence: false
+  extraction runs filtered by decision time (a name added later re-reads older headlines): false
+  sentiment (40B step 10): false
+  regulator news from RBI and SEBI: false
+negative_assertions:
+  extraction confidence used as investment confidence: false
+  article linked to a company through an undeclared or guessed name: false
+  company made the subject of a list of companies: false
+  one story counted as several because it was republished: false
+  story dated earlier than its first copy was public: false
+  empty or refused response stored as no news: false
+  headline followed as an instruction: false
+  network connection outside the news fetcher: false
+  NSE data fetched automatically: false
+  article link opened: false
