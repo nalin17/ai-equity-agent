@@ -1,0 +1,32 @@
+stage: "10B - Regulator releases (SEBI's RSS feed)"
+status: ACCEPTED_REGULATOR_RELEASES_BASELINE
+architecture: [40B step 9, 3B, 4, 4A, 4C.1, 4D, 4E, 5B, 40D, ADR-006]
+proven:
+  - A read of SEBI's feed is kept byte for byte; each release is stored once by its link; a release read again differently is a conflict (tested)
+  - A release counts as public only from this system's first read of it, under both point-in-time claims; SEBI's stated date is kept but never used as proof (tested)
+  - A read sharing no release with the previous read warns that releases may have been missed (tested)
+  - Empty feeds, non-RSS answers and feeds declaring a DOCTYPE or ENTITY are refused whole - never stored as 'no releases' (tested)
+  - Items with no title, a link outside SEBI's site, an unreadable date or a date after the read are refused and recorded (tested)
+  - Rule sb-kinds-1 takes the kind from SEBI's own section; only enforcement orders map to the registered type 'sebi_order'; unknown sections stay 'other' (tested)
+  - Rule sb-entity-1 links a listed company only by its exact registered name ('Ltd' = 'Limited'); names without a company suffix must match exactly as registered; the longest name wins; a name shared by two registered companies links neither; extraction confidence is 'registered_name_in_title' (tested)
+  - The fetcher asks only for https://www.sebi.gov.in/sebirss.xml, at most once an hour, and refuses every other SEBI address; no code names RBI's site (tested, static test)
+  - 21 of 21 deliberate faults in the new code were caught by the tests (one was missed at first - a non-RSS document with an RSS-like inside; a test was added); Stage 10's 32 of 32 still caught after the fetcher changed
+  - 'Real data: SEBI feed read 03-Oct-2026 05:50 UTC - 30 items (01-Oct 15, 30-Sep 9, 29-Sep 6), 30 releases stored, 0 refused; 16 orders (sebi_order), 12 recovery proceedings, 1 circular, 1 press release'
+  - "Real data: 3 releases name listed companies by registered name - SMC Global Securities (an adjudication order) and TV Vision (two recovery notices); 'Adani Group Companies' and 'Lloyd Enterprises Limited' (not the listed 'Lloyds Enterprises Limited') link nothing"
+  - "Real data: RBI's terms forbid caching its pages and linking to them without written permission; RBI is not used (ADR-006)"
+not_claimed:
+  RBI releases: false
+  release text or attached orders read (titles only): false
+  whether a named company is the party acted against or only the matter's subject: false
+  direction, materiality and expected horizon of releases: false
+  releases SEBI published before this system's first read, or while the feed was not read: false
+  companies named by anything but their exact registered name: false
+  circulars linked to the sectors or companies they affect: false
+negative_assertions:
+  release dated earlier than this system first read it: false
+  company linked by a near-miss or group name: false
+  SEBI address other than the feed asked for: false
+  RBI site contacted: false
+  empty or broken feed stored as no releases: false
+  title followed as an instruction: false
+  individual's name used in a test: false

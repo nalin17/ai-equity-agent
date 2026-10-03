@@ -17,6 +17,8 @@ Commands:
   fetch-news [--symbols A,B] [--from YYYY-MM-DD]  fetch news from GDELT for the companies in
                             config/news_names.yaml - the only command that uses the internet
   show-news SYMBOL [FROM] [TO]  list one company's news stories - copies of one story shown once
+  fetch-sebi                read SEBI's RSS feed once (orders, circulars, press releases) - ADR-006
+  show-sebi [--symbol SYMBOL] [FROM] [TO]  list SEBI's releases (dates YYYY-MM-DD; default last 7 days)
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -28,11 +30,12 @@ automated collection (ADR-004). The time a file is ingested is recorded as its
 retrieval time: it is the moment the data verifiably entered this system
 (architecture 5B.2).
 
-News is the one exception: fetch-news asks GDELT, whose terms allow automated use,
-and nothing else (ADR-005). Article links are never opened.
+News is the one exception: fetch-news asks GDELT, whose terms allow automated use
+(ADR-005), and fetch-sebi reads SEBI's one RSS feed (ADR-006) - nothing else. Article
+links are never opened.
 """
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
@@ -46,11 +49,12 @@ from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, w
 from ingestion.gdelt_news import ENTITY_RULE, extract, stories, sync_news_names  # noqa: E402
 from ingestion.gdelt_news import DEDUP_RULE as NEWS_DEDUP_RULE  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
-from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_company  # noqa: E402
+from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_company, fetch_sebi  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
 from ingestion.nse_financial_results import IST  # noqa: E402
+from ingestion.sebi_releases import ENTITY_RULE as SEBI_ENTITY_RULE, KINDS_RULE, releases  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
 from provenance.availability import parse_timestamp  # noqa: E402
 from universe.entities import resolve  # noqa: E402
@@ -374,6 +378,58 @@ def show_news(args):
     conn.close()
 
 
+def fetch_sebi_feed(args):
+    if args:
+        raise SystemExit("Usage: python manage.py fetch-sebi")
+    log = setup_logging()
+    conn = open_db()
+    try:
+        result = fetch_sebi(conn, fetched_dir())
+    except Exception as e:  # nothing partial is stored
+        conn.close()
+        log.error("SEBI feed: NOT READ - %s: %s", type(e).__name__, e)
+        raise SystemExit(1) from None
+    problems, warning = result.pop("problems", []), result.pop("warning", None)
+    log.info("SEBI feed: %s", result)
+    for problem in problems:
+        print(f"     {problem}")
+    if warning:
+        log.warning("SEBI feed: %s", warning)
+    conn.close()
+
+
+def show_sebi(args):
+    usage = "Usage: python manage.py show-sebi [--symbol SYMBOL] [FROM] [TO]"
+    symbol = None
+    if args[:1] == ["--symbol"]:
+        if len(args) < 2:
+            raise SystemExit(usage)
+        symbol, args = args[1], args[2:]
+    if len(args) > 2 or any(a.startswith("--") for a in args):
+        raise SystemExit(usage)
+    now = datetime.now(timezone.utc)
+    start = strict_iso_date(args[0]).isoformat() if args else (now - timedelta(days=7)).date().isoformat()
+    end = strict_iso_date(args[1]).isoformat() if len(args) > 1 else "9999-12-31"
+    conn = open_db()
+    isins = [None]
+    if symbol:
+        isins = [r[0] for r in conn.execute(
+            "SELECT DISTINCT isin FROM entity_aliases WHERE alias_type = 'nse_symbol' AND alias_value = ?",
+            [symbol])]
+        if not isins:
+            raise SystemExit(f"Unknown symbol {symbol}")
+    found = [r for isin in isins for r in releases(conn, now, isin=isin) if start <= r["stated_date"] <= end]
+    print(f"SEBI releases{' naming ' + symbol if symbol else ''} dated {start} to {end}: {len(found)}"
+          f" (rules {KINDS_RULE}, {SEBI_ENTITY_RULE}); 'seen' is when this system first read each one")
+    for r in found:
+        seen = parse_timestamp(r["published_at"]).astimezone(IST)
+        named = ", ".join(c["registered_name"] for c in r["companies"].values())
+        print((f"  {r['stated_date']}  seen {seen:%Y-%m-%d %H:%M}  {r['kind']:<19}"
+               + (f" names: {named}" if named else "")).rstrip())
+        print(f"              {r['title'][:110]}")
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -472,6 +528,8 @@ def report(args):
           f"  -> events: {len(events(conn, datetime.now(timezone.utc)))} (rule {DEDUP_RULE})")
     print(f"News articles (GDELT):     {one('SELECT COUNT(*) FROM nw_articles')}"
           f"  from {one('SELECT COUNT(*) FROM nw_responses')} responses")
+    print(f"SEBI releases:             {one('SELECT COUNT(*) FROM sb_releases')}"
+          f"  from {one('SELECT COUNT(*) FROM sb_reads')} reads of the feed")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -502,6 +560,8 @@ COMMANDS = {
     "show-events": show_events,
     "fetch-news": fetch_news,
     "show-news": show_news,
+    "fetch-sebi": fetch_sebi_feed,
+    "show-sebi": show_sebi,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

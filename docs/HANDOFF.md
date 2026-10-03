@@ -5,8 +5,8 @@ without losing anything. Read this whole file before doing anything else.
 
 State at handoff: Stage 9 committed as cf1c948, CI green, 393 tests passing,
 database at schema version 14. Updated 2026-10-03 after Stage 10 (news from GDELT,
-ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architecture
-40B step 10 (Sentiment Adapter). See section 9.
+ADR-005) and Stage 10B (SEBI releases, ADR-006): 518 tests, schema version 16. The next
+build is Stage 11 = architecture 40B step 10 (Sentiment Adapter). See section 9.
 
 ---
 
@@ -36,7 +36,7 @@ ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architectur
 | Tests | pytest; `pytest.ini`: pythonpath = src, testpaths = tests, addopts = -p no:cacheprovider |
 | CI | `.github/workflows/tests.yml`, Python 3.14, runs pytest on every push |
 | Dependencies | requirements.txt: pytest, pyyaml (nothing else) |
-| Internet use | only `python manage.py fetch-news` - GDELT news, ADR-005; everything else is hand downloads |
+| Internet use | only `fetch-news` (GDELT news, ADR-005) and `fetch-sebi` (SEBI's one RSS feed, ADR-006); everything else is hand downloads |
 | Check CI | `curl -s "https://api.github.com/repos/nalin17/ai-equity-agent/actions/runs?per_page=1"` |
 
 ## 3. Authority documents
@@ -48,7 +48,8 @@ ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architectur
 - Decisions: `docs/decisions/ADR-001-sqlite.md`, `ADR-002-independent-build.md`,
   `ADR-003-etf-scope.md` (ETFs/mutual-fund units, ISIN prefix INF, are out of scope),
   `ADR-004-data-intake.md` (no scraping; hand downloads; licensed sources for scale),
-  `ADR-005-news-from-gdelt.md` (news from GDELT, fetched by fetch-news - the only network code).
+  `ADR-005-news-from-gdelt.md` (news from GDELT, fetched by fetch-news - the only network code),
+  `ADR-006-sebi-feed.md` (SEBI's RSS feed read hourly at most; RBI not used without permission).
 - Scope (architecture section 3): one exchange (NSE, India), 30-company focus cohort
   first. Other countries' stocks need an architecture change request; global FX/rates
   are allowed only as macro context (the "Sector / macro" domain is Core).
@@ -59,8 +60,10 @@ ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architectur
    collection. Do NOT build scrapers, do not bulk-download through the browser, do not
    use nsepython/jugaad-data or "NSE scraper" APIs. A static test
    (`tests/test_stage08c_intake.py::test_no_code_contacts_a_website`) fails if any
-   module imports a network library. A licensed API would need a new ADR first. The one
-   exception (ADR-005): src/ingestion/news_fetch.py may call api.gdeltproject.org for news.
+   module imports a network library. A licensed API would need a new ADR first. The
+   exceptions: src/ingestion/news_fetch.py may call api.gdeltproject.org for news (ADR-005)
+   and read https://www.sebi.gov.in/sebirss.xml at most hourly (ADR-006). RBI is not used:
+   its terms forbid caching and linking without written permission.
 2. TradingView data is display-only (non-display/machine use prohibited) - not a source.
 3. The assistant never downloads files itself without explicit permission; reading a
    page in the browser to design code is fine. The owner downloads; the assistant reads
@@ -133,6 +136,7 @@ ADR-005): 482 tests, schema version 15. The next build is Stage 11 = architectur
 | 8D | 7da4f0b | 40B step 7, 5 | NBFCs, life insurers, real 'Revision' rows, revisions recorded as dated corrections |
 | 9 | cf1c948 | 40B step 8, 4A, 4D | NSE corporate announcements; one release = one event (rule an-dedup-1); subject->type mapping an-types-1 |
 | 10 | see git log | 40B step 9, 4A, 4B.4, ADR-005 | news headlines from GDELT; extraction confidence stored apart from investment confidence; rules nw-entity-1 (company links) and nw-dedup-1 (copies) |
+| 10B | see git log | 40B step 9, 4A, 5B, ADR-006 | SEBI releases from its RSS feed; public only from the first read; companies by exact registered name (sb-entity-1); kinds from SEBI's sections (sb-kinds-1) |
 
 Acceptance records with exact claims, not-claimed items and negative assertions are in
 `stages/STAGE_*_acceptance.yaml`.
@@ -140,7 +144,8 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
 ## 7. Current state (verified at handoff)
 
 - At Stage 9: 393 tests; schema version 14; 28 migration files. After Stage 10: 482 tests;
-  schema version 15; 30 migration files (0001-0015 up/down); news counts: `python manage.py report`.
+  schema version 15; 30 migration files (0001-0015 up/down). After Stage 10B: 518 tests;
+  schema version 16; 32 migration files (0001-0016); news and SEBI counts: `python manage.py report`.
 - Data loaded: 2,594 entities (EQUITY_L); 32 raw files; 13,806 trusted daily prices
   (6 bhavcopies, 20-Aug to 01-Oct-2026); 1,182 corporate actions; 1 identity bridge
   (TAALTECH); results listings 5 (old page) + 49 (integrated); 17 results files;
@@ -158,6 +163,7 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
   load-results-index FILE..., load-results FILE..., show-fundamentals SYMBOL [PERIOD_END],
   load-announcements FILE..., show-events SYMBOL [FROM] [TO],
   fetch-news [--symbols A,B] [--from DATE], show-news SYMBOL [FROM] [TO],
+  fetch-sebi, show-sebi [--symbol SYMBOL] [FROM] [TO],
   ingest-inbox [--without-listing] [FOLDER], checklist [LISTING...] [--symbols A,B]
   [--since DATE] [--prices-from DATE], report.
 - `src/core/` - config, database (`connect`, `migrate`, `rollback`, `run_in_transaction`,
@@ -177,7 +183,8 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
   SEBI_FORMATS IndAS/Banking/NBFC/LI, listings, identities, standalone-only ratios,
   revisions), intake (checklist + ingest-inbox), nse_announcements (filings, `events()`),
   gdelt_news (GDELT articles, news names, `extract()`, `stories()`), news_fetch (the only
-  network code: GDELT requests, spacing, back-off, window splitting).
+  network code: GDELT requests, spacing, back-off, window splitting; SEBI's feed, hourly),
+  sebi_releases (SEBI feed reads, `releases()`, rules sb-kinds-1 and sb-entity-1).
 - `src/features/price_series.py` - raw/adjusted series.
 - Empty packages reserved for later steps: abstention, calibration, experiments, ledger,
   models, regimes, research, targets, validation.
@@ -185,7 +192,7 @@ Acceptance records with exact claims, not-claimed items and negative assertions 
 ## 9. Architecture roadmap (40B) and the next step
 
 Done: steps 1-9. Our stage numbers: step 6 = Stage 7, step 7 = Stage 8/8B/8D,
-step 8 = Stage 9, step 9 = Stage 10. 8C was the intake tooling.
+step 8 = Stage 9, step 9 = Stage 10/10B. 8C was the intake tooling.
 
 NEXT: Stage 11 = 40B step 10, Sentiment Adapter.
 Acceptance (40B): "Features below the liquidity threshold are refused, not down-weighted
@@ -193,8 +200,7 @@ Acceptance (40B): "Features below the liquidity threshold are refused, not down-
 Sentiment may use only sentiment-eligible stories (4B.4): Stage 10's 'subject' articles;
 'mentioned' and search-only stories feed attention only. GDELT also offers tone - a model
 output: keep it, never flip it (4B.5). The liquidity threshold needs traded value from
-trusted_prices. Optional: Stage 10B = RBI and SEBI releases (regulatory news; feeds
-checked 02-Oct-2026: SEBI RSS has its latest 30 items with dates only, RBI 10 items).
+trusted_prices. Stage 10B (SEBI releases) is done; RBI waits for written permission.
 
 Then: step 11 Knowledge/Event Hub (one point-in-time evidence object), 12 Real Feature Factory,
 13 Real Target Engine, 14 Equity Research Agent v0.1 (first agent), 15 Prediction
@@ -245,6 +251,17 @@ News (GDELT DOC 2.0 API, article list, JSON; checked 02-Oct-2026):
   fetcher then gives up for the run and stores nothing); also network drop-outs;
 - Business Standard and HT/Mint terms forbid AI use of their content: never open links.
 
+SEBI releases (https://www.sebi.gov.in/sebirss.xml; checked 03-Oct-2026):
+- RSS 2.0, ttl 60; only the latest 30 items (about three working days); each item has title,
+  description (same as the title), link and pubDate as a date only ('01 Oct, 2026 +0530');
+  no guid; links look like /enforcement/orders/oct-2026/<slug>_<id>.html;
+- sections seen: enforcement/orders, enforcement/recovery-proceedings, legal/circulars,
+  media-and-notifications/press-releases; titles may contain curly quotes;
+- titles name companies by registered name ('... in the matter of SMC Global Securities Ltd'),
+  groups ('Adani Group Companies'), near misses ('Lloyd Enterprises Limited' vs the listed
+  'Lloyds Enterprises Limited') and individuals with tax ids - keep those out of tests;
+- RBI: website terms forbid caching and linking without permission; its server refuses AI tools.
+
 ## 11. Open items, deferred work and things NOT claimed
 
 - Rows refused by an earlier code version cannot be re-read from a stored listing
@@ -261,6 +278,8 @@ News (GDELT DOC 2.0 API, article list, JSON; checked 02-Oct-2026):
   short forms ('Reliance', 'TCS', 'HDFC') and names only in other scripts not matched;
   'sources say' stories not screened (4F.2); site quality not assessed; extraction runs not
   filtered by decision time; only 6 companies have news names (config/news_names.yaml).
+- SEBI (Stage 10B): titles only; releases before the first read are missing; whether a named
+  company is the party acted against is not assessed; circulars not linked to sectors; no RBI.
 
 ## 12. Data-source research already done (do not repeat)
 
@@ -292,8 +311,9 @@ News (GDELT DOC 2.0 API, article list, JSON; checked 02-Oct-2026):
   GDELT: open data, 'unlimited and unrestricted use', cite gdeltproject.org - chosen
   (ADR-005). Paid news APIs, terms on storage and AI use NOT yet checked: Marketaux from
   $29/month, NewsData.io from ~$200/month, NewsAPI.org $449/month (free plan for testing
-  only). Regulators: PIB and RBI allow reuse with acknowledgement; SEBI allows linking
-  and asks for an email before republishing.
+  only). Regulators: PIB allows reuse with acknowledgement; RBI's website terms forbid
+  caching and linking without written permission (checked 03-Oct-2026); SEBI allows
+  linking and asks for an email before republishing - its feed is read (ADR-006).
 
 ## 13. How to start the new chat
 

@@ -1,8 +1,10 @@
-"""Fetching news from GDELT's DOC 2.0 API (ADR-005).
+"""Fetching news from GDELT's DOC 2.0 API (ADR-005) and SEBI's RSS feed (ADR-006).
 
 This is the ONLY module in the project allowed to open a network connection, and it contacts
-only the hosts in ALLOWED_HOSTS. NSE data is never fetched: NSE's terms forbid it (ADR-004).
-GDELT's terms allow any use, with citation, and GDELT asks callers to space their requests.
+only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED. NSE data
+is never fetched: NSE's terms forbid it (ADR-004). GDELT's terms allow any use, with citation,
+and GDELT asks callers to space their requests. SEBI's feed asks readers to wait 60 minutes
+between reads; a read sooner is refused before anything is sent.
 
 Rules:
   - Requests are spaced at least MIN_INTERVAL seconds apart. When GDELT refuses (HTTP 429, or its
@@ -28,10 +30,13 @@ from pathlib import Path
 
 from data_quality.trust_chain import NoDataError
 from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response, news_names, read_response
+from ingestion.sebi_releases import load_feed, read_feed
 from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
-ALLOWED_HOSTS = frozenset({"api.gdeltproject.org"})
+ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in"})
+SEBI_FEED = "https://www.sebi.gov.in/sebirss.xml"   # the only address on SEBI's site ever asked for
+SEBI_WAIT = timedelta(minutes=60)                   # the feed's own time-to-live (ttl 60)
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 USER_AGENT = "ai-equity-agent/1.0 (personal research, non-commercial)"
 MIN_INTERVAL = 20.0                    # seconds between requests (GDELT asks for at least 5; it refuses in waves)
@@ -57,8 +62,11 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _check_host(url):
-    if urllib.parse.urlsplit(url).hostname not in ALLOWED_HOSTS:
-        raise FetchError(f"{url[:60]!r} is not an allowed host (ADR-005)")
+    host = urllib.parse.urlsplit(url).hostname
+    if host not in ALLOWED_HOSTS:
+        raise FetchError(f"{url[:60]!r} is not an allowed host (ADR-005, ADR-006)")
+    if host == "www.sebi.gov.in" and url != SEBI_FEED:
+        raise FetchError(f"{url[:60]!r} is not an allowed address: only SEBI's feed is read (ADR-006)")
 
 
 def http_get(url):
@@ -177,3 +185,25 @@ def _fetch_window(conn, fetcher, isin, symbol, query, start, end, out_dir, raw_d
         report = {"articles": len(articles), "note": "identical to a response already stored - nothing new"}
     reports.append({"window": window, **{k: v for k, v in report.items() if k != "problems"},
                     "problems": report.get("problems", [])})
+
+
+def fetch_sebi(conn, out_dir, get=http_get, now=lambda: datetime.now(timezone.utc), raw_dir=None):
+    """Read SEBI's feed once and store its releases (ADR-006). Returns the load report."""
+    last = conn.execute("SELECT MAX(a.retrieved_at) FROM sb_reads r JOIN raw_artifacts a"
+                        " ON a.artifact_id = r.artifact_id").fetchone()[0]
+    if last and now() - parse_timestamp(last) < SEBI_WAIT:
+        raise FetchError(f"SEBI's feed was last read at {last[:16]} UTC and asks readers to wait"
+                         f" {SEBI_WAIT.seconds // 60} minutes between reads - try again later; nothing sent")
+    status, body = get(SEBI_FEED)
+    retrieved = now()
+    if status != 200:
+        raise FetchError(f"SEBI answered HTTP {status} - nothing stored")
+    items = read_feed(body)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"sebi_{retrieved:%Y%m%d%H%M%S}.xml"
+    path.write_bytes(body)
+    try:
+        return load_feed(conn, path, retrieved, raw_dir=raw_dir)
+    except ArtifactError:
+        return {"items": len(items), "note": "identical to a read already stored - nothing new", "problems": []}

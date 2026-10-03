@@ -164,3 +164,19 @@ sources:
     reliability_rating: B
     authentication_method: none (public API; requests spaced and backed off - ADR-005)
     schema_description: one object per article - url, url_mobile, title, seendate (UTC, 15-minute steps), socialimage, domain, language, sourcecountry
+
+  - source_id: sebi_rss
+    provider: SEBI
+    source_class: regulator_official
+    data_type: SEBI releases - orders, recovery proceedings, circulars and press releases; title, link and date
+    endpoint: https://www.sebi.gov.in/sebirss.xml (RSS 2.0)
+    authority: primary
+    license: SEBI website policy - linking needs no permission; reproduction needs permission by email; stored privately for research and never republished (ADR-006)
+    update_frequency: as SEBI publishes; the feed keeps only its latest 30 items
+    historical_coverage: from this system's first read onwards (about three working days visible at a time)
+    latency: feed time-to-live 60 minutes
+    revision_policy: corrections arrive as new releases (for example a corrigendum); nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public RSS; read at most once an hour - ADR-006)
+    schema_description: one item per release - title, description (same as the title), link, pubDate (a date without a time of day)

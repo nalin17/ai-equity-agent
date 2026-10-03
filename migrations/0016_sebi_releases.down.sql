@@ -1,0 +1,9 @@
+DROP TRIGGER sb_problems_no_delete;
+DROP TRIGGER sb_problems_no_update;
+DROP TRIGGER sb_releases_no_delete;
+DROP TRIGGER sb_releases_no_update;
+DROP TRIGGER sb_reads_no_delete;
+DROP TRIGGER sb_reads_no_update;
+DROP TABLE sb_problems;
+DROP TABLE sb_releases;
+DROP TABLE sb_reads;
