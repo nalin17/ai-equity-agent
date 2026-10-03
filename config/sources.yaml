@@ -180,3 +180,19 @@ sources:
     reliability_rating: A
     authentication_method: none (public RSS; read at most once an hour - ADR-006)
     schema_description: one item per release - title, description (same as the title), link, pubDate (a date without a time of day)
+
+  - source_id: fred_alfred
+    provider: Federal Reserve Bank of St. Louis (FRED and its vintage archive ALFRED)
+    source_class: official_statistics
+    data_type: global and India macro context series - rates, currencies, commodities, world equity index closes, volatility, credit spreads, economic releases - with every vintage
+    endpoint: https://api.stlouisfed.org/fred/ (series/observations and series only; JSON)
+    authority: secondary
+    license: FRED API terms - personal use, including series owned by others; owners' copyright notices kept; S&P Dow Jones Indices series refused (reproduction forbidden); stored privately and never redistributed; the owner's own key, never stored; notice 'This product uses the FRED API but is not endorsed or certified by the Federal Reserve Bank of St. Louis' (ADR-008)
+    update_frequency: per series - daily, weekly releases of daily data, monthly or quarterly
+    historical_coverage: per series from config/macro_series.yaml history_from (2016 daily, 2006 monthly); vintages from ALFRED
+    latency: hours to weeks after the observation date, by publisher (H.15 next business day, H.10 and EIA weekly)
+    revision_policy: a revised value is a new vintage with its real-time start; old vintages are kept; nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: API key of the owner, read from the environment variable FRED_API_KEY by the network module only; at most one request a second
+    schema_description: observations - date, value ('.' when none), realtime_start, realtime_end; series - id, units, frequency, last_updated (with its UTC offset), notes

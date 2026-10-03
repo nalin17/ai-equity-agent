@@ -1,0 +1,344 @@
+# Global and India macro context series (architecture 3G, 5C, 40B step 9a; ADR-008). Human-owned.
+# Each series is context for Indian equities - never a covered security, a target or a benchmark
+# (3G rule 2). It reaches a decision only as regime state or through a company's measured
+# sensitivity to it (3G rule 3); a raw level is never a buy or sell signal on its own.
+#
+# Fields:
+#   series_id      FRED's id. Checked against FRED's own description on every fetch.
+#   group          the 3G group: rates_and_bonds, currencies, commodities, world_equity_markets,
+#                  volatility_and_credit, economic_releases
+#   kind           market_close        - a market's closing level on its session date. It cannot be
+#                                        known before session_close (local time in time_zone).
+#                                        Where the exact close is uncertain, the LATEST possible time
+#                                        is declared: being late is safe, being early is look-ahead.
+#                  published_statistic - a figure known only once its compiler publishes it.
+#   market         the exchange that sets the value, or the publisher that compiles it
+#   calendar       which days carry a value. FRED lists a day a market was closed with no value ('.').
+#   time_zone      market closes: a zone declared in src/core/sessions.py
+#   frequency      daily (business days), daily_7day, weekly, monthly or quarterly
+#   fred_units     FRED's exact wording of the units - a change stops the fetch (4G rule 7)
+#   history_from   the first observation date asked for on the first fetch
+#   licence        the series owner's terms as FRED states them. Data is stored privately for the
+#                  owner's own research and never published or distributed.
+# Recorded series are never silently changed: editing or removing one stops fetch-macro.
+# Not used: S&P 500 and the Dow Jones averages (SP500, DJIA ...) - S&P Dow Jones Indices forbids
+# reproduction in any form without written permission, and SP500 has no vintages in ALFRED.
+
+series:
+  # ---- rates and bonds ----
+  - series_id: DGS2
+    title: US Treasury 2-year yield (constant maturity)
+    group: rates_and_bonds
+    region: United States
+    kind: published_statistic
+    market: Federal Reserve Board, H.15 release (published the next business day)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DGS10
+    title: US Treasury 10-year yield (constant maturity)
+    group: rates_and_bonds
+    region: United States
+    kind: published_statistic
+    market: Federal Reserve Board, H.15 release (published the next business day)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: T10Y2Y
+    title: US Treasury curve, 10-year minus 2-year
+    group: rates_and_bonds
+    region: United States
+    kind: published_statistic
+    market: Federal Reserve Bank of St. Louis from US Treasury yields (published the same day)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DFF
+    title: US federal funds effective rate
+    group: rates_and_bonds
+    region: United States
+    kind: published_statistic
+    market: Federal Reserve Board, H.15 release
+    calendar: every calendar day
+    time_zone: America/New_York
+    frequency: daily_7day
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: ECBDFR
+    title: ECB deposit facility rate
+    group: rates_and_bonds
+    region: Euro area
+    kind: published_statistic
+    market: European Central Bank
+    calendar: every calendar day
+    time_zone: Europe/Berlin
+    frequency: daily_7day
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: Copyright European Central Bank, reprinted in FRED with permission; personal research use
+  - series_id: INDIRLTLT01STM
+    title: India 10-year government bond yield (monthly)
+    group: rates_and_bonds
+    region: India
+    kind: published_statistic
+    market: OECD Main Economic Indicators
+    calendar: one value per month, dated the first day of the month
+    time_zone: Europe/Paris
+    frequency: monthly
+    fred_units: Percent
+    history_from: "2006-01-01"
+    licence: OECD data, to be cited as OECD; personal research use
+  - series_id: IRLTLT01JPM156N
+    title: Japan 10-year government bond yield (monthly)
+    group: rates_and_bonds
+    region: Japan
+    kind: published_statistic
+    market: OECD Main Economic Indicators
+    calendar: one value per month, dated the first day of the month
+    time_zone: Europe/Paris
+    frequency: monthly
+    fred_units: Percent
+    history_from: "2006-01-01"
+    licence: OECD data, to be cited as OECD; personal research use
+
+  # ---- currencies ----
+  - series_id: DEXINUS
+    title: Indian rupees per US dollar (New York noon rate)
+    group: currencies
+    region: India
+    kind: published_statistic
+    market: Federal Reserve Board, H.10 release (published weekly)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Indian Rupees to One U.S. Dollar
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DTWEXBGS
+    title: Broad US dollar index (nominal)
+    group: currencies
+    region: United States
+    kind: published_statistic
+    market: Federal Reserve Board, H.10 release (published weekly)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Index Jan 2006=100
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DEXCHUS
+    title: Chinese yuan per US dollar (New York noon rate)
+    group: currencies
+    region: China
+    kind: published_statistic
+    market: Federal Reserve Board, H.10 release (published weekly)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Chinese Yuan Renminbi to One U.S. Dollar
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DEXJPUS
+    title: Japanese yen per US dollar (New York noon rate)
+    group: currencies
+    region: Japan
+    kind: published_statistic
+    market: Federal Reserve Board, H.10 release (published weekly)
+    calendar: US business days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Japanese Yen to One U.S. Dollar
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+
+  # ---- commodities ----
+  - series_id: DCOILBRENTEU
+    title: Brent crude oil spot price
+    group: commodities
+    region: World
+    kind: published_statistic
+    market: US Energy Information Administration (published weekly)
+    calendar: trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Dollars per Barrel
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DCOILWTICO
+    title: WTI crude oil spot price (Cushing)
+    group: commodities
+    region: United States
+    kind: published_statistic
+    market: US Energy Information Administration (published weekly)
+    calendar: trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Dollars per Barrel
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: DHHNGSP
+    title: Henry Hub natural gas spot price
+    group: commodities
+    region: United States
+    kind: published_statistic
+    market: US Energy Information Administration (published weekly)
+    calendar: trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    frequency: daily
+    fred_units: Dollars per Million BTU
+    history_from: "2016-01-01"
+    licence: US government data; FRED API terms
+  - series_id: PCOPPUSDM
+    title: Global copper price (monthly average)
+    group: commodities
+    region: World
+    kind: published_statistic
+    market: International Monetary Fund, primary commodity prices
+    calendar: one value per month, dated the first day of the month
+    time_zone: America/New_York
+    frequency: monthly
+    fred_units: U.S. Dollars per Metric Ton
+    history_from: "2006-01-01"
+    licence: Copyright IMF, reprinted in FRED with permission; IMF terms of use; personal research use
+  - series_id: PALUMUSDM
+    title: Global aluminium price (monthly average)
+    group: commodities
+    region: World
+    kind: published_statistic
+    market: International Monetary Fund, primary commodity prices
+    calendar: one value per month, dated the first day of the month
+    time_zone: America/New_York
+    frequency: monthly
+    fred_units: U.S. Dollars per Metric Ton
+    history_from: "2006-01-01"
+    licence: Copyright IMF, reprinted in FRED with permission; IMF terms of use; personal research use
+
+  # ---- world equity markets ----
+  - series_id: NASDAQCOM
+    title: Nasdaq Composite index (close)
+    group: world_equity_markets
+    region: United States
+    kind: market_close
+    market: Nasdaq Stock Market
+    calendar: Nasdaq trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    session_close: "16:00"
+    frequency: daily
+    fred_units: Index Feb 5, 1971=100
+    history_from: "2016-01-01"
+    licence: Copyright Nasdaq, Inc.; personal research use; never redistributed
+  - series_id: NIKKEI225
+    title: Nikkei 225 index (close)
+    group: world_equity_markets
+    region: Japan
+    kind: market_close
+    market: Tokyo Stock Exchange (Nikkei Inc. index)
+    calendar: Tokyo Stock Exchange trading days; FRED lists a closed day with no value
+    time_zone: Asia/Tokyo
+    session_close: "15:30"
+    frequency: daily
+    fred_units: Index
+    history_from: "2016-01-01"
+    licence: Copyright Nikkei Inc.; downloading for research projects permitted; never redistributed without Nikkei's permission
+
+  # ---- volatility and credit stress ----
+  - series_id: VIXCLS
+    title: Cboe VIX volatility index (close)
+    group: volatility_and_credit
+    region: United States
+    kind: market_close
+    market: Cboe Options Exchange
+    calendar: Cboe trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    session_close: "16:15"
+    frequency: daily
+    fred_units: Index
+    history_from: "2016-01-01"
+    licence: Copyright Cboe, reprinted in FRED with permission; personal research use
+  - series_id: VXEEMCLS
+    title: Cboe emerging markets ETF volatility index (close)
+    group: volatility_and_credit
+    region: Emerging markets
+    kind: market_close
+    market: Cboe Options Exchange
+    calendar: Cboe trading days; FRED lists a closed day with no value
+    time_zone: America/New_York
+    session_close: "16:15"
+    frequency: daily
+    fred_units: Index
+    history_from: "2016-01-01"
+    licence: Copyright Cboe, reprinted in FRED with permission; personal research use
+  - series_id: BAMLH0A0HYM2
+    title: US high-yield credit spread (ICE BofA option-adjusted)
+    group: volatility_and_credit
+    region: United States
+    kind: market_close
+    market: ICE Data Indices (end-of-day bond index; latest possible close declared)
+    calendar: US bond market days; FRED keeps only the last 3 years
+    time_zone: America/New_York
+    session_close: "17:00"
+    frequency: daily
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: Copyright ICE Data Indices; for internal use only; never published or distributed
+  - series_id: BAMLEMCBPIOAS
+    title: Emerging markets corporate credit spread (ICE BofA option-adjusted)
+    group: volatility_and_credit
+    region: Emerging markets
+    kind: market_close
+    market: ICE Data Indices (end-of-day bond index; latest possible close declared)
+    calendar: US bond market days; FRED keeps only the last 3 years
+    time_zone: America/New_York
+    session_close: "17:00"
+    frequency: daily
+    fred_units: Percent
+    history_from: "2016-01-01"
+    licence: Copyright ICE Data Indices; for internal use only; never published or distributed
+
+  # ---- economic releases ----
+  - series_id: CPIAUCSL
+    title: US consumer price index (all items, seasonally adjusted)
+    group: economic_releases
+    region: United States
+    kind: published_statistic
+    market: US Bureau of Labor Statistics
+    calendar: one value per month, dated the first day of the month
+    time_zone: America/New_York
+    frequency: monthly
+    fred_units: Index 1982-1984=100
+    history_from: "2006-01-01"
+    licence: US government data; FRED API terms
+  - series_id: PAYEMS
+    title: US nonfarm payrolls
+    group: economic_releases
+    region: United States
+    kind: published_statistic
+    market: US Bureau of Labor Statistics
+    calendar: one value per month, dated the first day of the month
+    time_zone: America/New_York
+    frequency: monthly
+    fred_units: Thousands of Persons
+    history_from: "2006-01-01"
+    licence: US government data; FRED API terms
+  - series_id: GDPC1
+    title: US real GDP (quarterly)
+    group: economic_releases
+    region: United States
+    kind: published_statistic
+    market: US Bureau of Economic Analysis
+    calendar: one value per quarter, dated the first day of the quarter
+    time_zone: America/New_York
+    frequency: quarterly
+    fred_units: Billions of Chained 2017 Dollars
+    history_from: "2006-01-01"
+    licence: US government data; FRED API terms

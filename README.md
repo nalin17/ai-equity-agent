@@ -9,3 +9,9 @@ docs/Master_Architecture_v1_11.md
 
 This repository is an independent build (see docs/decisions/ADR-002).
 Stage status lives in stages/*_acceptance.yaml - what is proven, and what is NOT claimed.
+
+Data notices:
+- This product uses the FRED&reg; API but is not endorsed or certified by the Federal Reserve
+  Bank of St. Louis. Series owned by others keep their owners' terms; data from FRED is stored
+  privately for the owner's own research and never redistributed (docs/decisions/ADR-008).
+- News metadata: The GDELT Project, https://www.gdeltproject.org/ (ADR-005).

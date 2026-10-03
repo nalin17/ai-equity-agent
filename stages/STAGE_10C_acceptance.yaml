@@ -1,0 +1,44 @@
+stage: "10C - Global and India macro context (FRED and ALFRED)"
+status: ACCEPTED_MACRO_CONTEXT_BASELINE
+architecture: [40B step 9a, 3B, 3G, 4, 4C, 4C.1, 4E, 4G, 5, 5A, 5B, 5C, 40D, 47 criteria 90-94 96-99, 47A guardrails 17 19 20, ADR-008]
+proven:
+  - Every series is declared in config/macro_series.yaml with its 3G group, market or publisher, calendar, time zone, session close (market closes), frequency, FRED's units and the owner's licence; recorded once and never silently changed; S&P Dow Jones Indices series refused (tested)
+  - Session closes are placed in UTC by their own time zone (New York with US daylight saving, Tokyo, India); the rules match Windows' own time-zone rules at 271,700 checkpoints for 2007-2040; times inside a daylight-saving changeover and dates before the US rule are refused (tested)
+  - Every FRED answer is kept byte for byte; an answer not matching the request, an error, an empty list or a list cut short is refused whole and nothing is stored; a series description disagreeing with the registry (id, units, frequency) or dated after our read is refused (tested)
+  - Every value is a vintage with its real-time start; a revision is a new vintage and the original stays known as of earlier decision times; a vintage read again differently is a recorded conflict; a start clipped by the rolling three-year window is marked and never taken for a new vintage (tested)
+  - Current decisions use this system's own read; historical replay uses FRED's own last-update time read right after the observations; ALFRED's vintage dates are kept but not used as proof (tested)
+  - A market close is never available before its session ended - a Nasdaq close dated 1 October is not available to an Indian decision on 1 October; a row showing a close before its session ended is refused; a stored close still waits for its session close (tested; criterion 91, guardrail 17)
+  - A date FRED lists without a value is structurally absent; weekends of business-day series are structurally absent; later dates are not yet released; gaps say why; no value is ever carried forward from another date (tested; 5C rule 4)
+  - The fetcher asks only https://api.stlouisfed.org/fred/series/observations and /fred/series, observations first, at least one second apart, and asks FRED nothing more in a run after HTTP 429; the key comes only from FRED_API_KEY and never reaches the database, files, logs or messages; an answer containing it is not stored (tested; criteria 98-99)
+  - Only the network module reads the environment; no target, benchmark, ledger, calibration, validation, model or universe module imports the macro context (static tests; criteria 93-94)
+  - The FRED notice is in README.md and printed by fetch-macro and show-macro (tested)
+  - 63 of 63 deliberate faults in the new code were caught (two escaped at first - a zone check also made by the session module, and a fault anchor shared with the GDELT fetcher; the test and the anchor were fixed); Stage 10's 32 of 32 and Stage 10B's 21 of 21 still caught after the fetcher changed
+  - "Real data (the owner's FRED probe of 03-Oct-2026, 44 requests, loaded on a copy of the database): 8 series, 487 vintages, 0 rows refused, 0 conflicts"
+  - "Real data: 8 dates listed without a value are stored as absent, never filled - US holidays 19-Jun, 3-Jul and 7-Sep in the H.10 rates, the UK holiday 31-Aug in Brent, and the ECB deposit rate for 1-Jul, which FRED filled the next day (kept as a new vintage)"
+  - "Real data: revisions kept as vintages - US payrolls for June and July 3 vintages each, August 2; the rupee rate for 3-Aug-2026 first shown as 95.9100000000 and corrected to 95.34 a week later"
+  - "Real data: ICE's US high-yield spread for 1-Oct-2026 carries ALFRED's vintage date 1-Oct, but FRED updated it on 2-Oct at 14:12 UTC; under historical replay an Indian decision at 09:15 on 2-Oct cannot use it"
+  - "Real data: FRED refuses full vintage histories of daily series (DGS10 has 5,122 vintage dates; the limit is 2,000) - hence the rolling three-year window; SP500 has no vintages in ALFRED and S&P forbids reproduction - not used"
+  - "Real data: H.15 Treasury yields for a date appear on FRED the next business day at about 15:16 Chicago time; H.10 exchange rates and EIA oil prices once a week; US index closes the same evening - each value's availability follows its own proof"
+  - "Real data (the owner's first live fetch-macro, 03-Oct-2026 22:01 India time): 25 of 25 series, 50 requests, 59,971 vintages over 50,190 dates (2006-01-01 to 2026-10-02), 1,624 dates without a value, 0 rows refused, 0 conflicts; US payrolls for Feb-2006 carry 21 vintages"
+  - "Real data: a second run 42 minutes later stored nothing new - every value already present; no stored request, fetched file, table or log line holds the key; no market close is available before its session ended"
+not_claimed:
+  whether a date FRED lists without a value was a closed market or a value not yet supplied (taken as closed; a later fill is a new vintage): false
+  historical replay of macro values older than this system's first read of them: false
+  ALFRED vintage dates used as proof of availability: false
+  India CPI, IIP, WPI, GDP, RBI policy rate or India VIX (Stage 10C-2, MoSPI and NSE): false
+  Shanghai, Hang Seng, emerging-market equity index, GIFT Nifty, gold or steel-input prices: false
+  revisions of values older than the look-back (45 days daily, 6 years monthly and quarterly) unless fetched with --full: false
+  holiday calendars of foreign markets (absence follows FRED's own listing of a date without a value): false
+  exact session close on early-close days (the regular close is declared - later than the truth, never earlier): false
+  macro exposure features, measured company sensitivities or regime states (3G rule 3, 9C, 29): false
+  US releases' consensus or surprise: false
+negative_assertions:
+  foreign close available to an Indian decision before its session ended: false
+  macro value used before this system or FRED proved it public: false
+  revised value overwriting an earlier vintage: false
+  value carried forward to a date without one: false
+  empty or broken FRED answer stored as no data: false
+  FRED key in the repository, database, files, logs or messages: false
+  FRED address other than series and observations asked for: false
+  S&P Dow Jones Indices series stored: false
+  macro series used as a covered security, target or benchmark: false

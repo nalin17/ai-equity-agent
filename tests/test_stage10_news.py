@@ -748,14 +748,14 @@ def test_the_fetcher_needs_declared_news_names(env):
         fetch(c, FakeGdelt(), tmp_path, isin="INE154A01025", symbol="ITC")
 
 
-def test_the_fetcher_reaches_only_gdelt_and_the_sebi_feed():
+def test_the_fetcher_reaches_only_gdelt_the_sebi_feed_and_fred():
     with pytest.raises(news_fetch.FetchError, match="not an allowed host"):
         news_fetch.http_get("https://www.nseindia.com/api/corporate-announcements")
     with pytest.raises(news_fetch.FetchError, match="not an allowed host"):
         news_fetch.http_get("https://api.gdeltproject.org.example.com/x")
     with pytest.raises(news_fetch.FetchError, match="only SEBI's feed"):
         news_fetch.http_get("https://www.sebi.gov.in/enforcement/orders.html")   # ADR-006: the feed only
-    assert news_fetch.ALLOWED_HOSTS == {"api.gdeltproject.org", "www.sebi.gov.in"}
+    assert news_fetch.ALLOWED_HOSTS == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org"}   # ADR-008
     assert news_fetch.SEBI_FEED == "https://www.sebi.gov.in/sebirss.xml"
 
 
@@ -780,9 +780,9 @@ def test_only_the_news_fetcher_opens_network_connections():
     assert offenders == []
 
 
-def test_the_news_fetcher_names_no_host_but_gdelt_and_sebi():
+def test_the_news_fetcher_names_no_host_but_gdelt_sebi_and_fred():
     hosts = set(re.findall(r"https?://([^/\"'\s]+)", FETCHER.read_text(encoding="utf-8")))
-    assert hosts == {"api.gdeltproject.org", "www.sebi.gov.in"}
+    assert hosts == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org"}   # ADR-008
 
 
 def test_only_manage_py_uses_the_news_fetcher():

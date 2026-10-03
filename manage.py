@@ -15,10 +15,14 @@ Commands:
   load-announcements FILE [...]  load NSE corporate announcements (CF-AN-equities-*.csv)
   show-events SYMBOL [FROM] [TO]  list one company's events - one per release (dates YYYY-MM-DD)
   fetch-news [--symbols A,B] [--from YYYY-MM-DD]  fetch news from GDELT for the companies in
-                            config/news_names.yaml - the only command that uses the internet
+                            config/news_names.yaml - uses the internet (GDELT, ADR-005)
   show-news SYMBOL [FROM] [TO]  list one company's news stories - copies of one story shown once
   fetch-sebi                read SEBI's RSS feed once (orders, circulars, press releases) - ADR-006
   show-sebi [--symbol SYMBOL] [FROM] [TO]  list SEBI's releases (dates YYYY-MM-DD; default last 7 days)
+  fetch-macro [--series A,B] [--full]  fetch the macro series in config/macro_series.yaml from FRED with
+                            your own key (environment variable FRED_API_KEY) - ADR-008
+  show-macro [SERIES]       the macro context as known now: each series' latest value, or one series'
+                            recent values with their vintages
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -31,8 +35,8 @@ retrieval time: it is the moment the data verifiably entered this system
 (architecture 5B.2).
 
 News is the one exception: fetch-news asks GDELT, whose terms allow automated use
-(ADR-005), and fetch-sebi reads SEBI's one RSS feed (ADR-006) - nothing else. Article
-links are never opened.
+(ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), and fetch-macro asks FRED's API
+with your own key (ADR-008) - nothing else. Article links are never opened.
 """
 import sys
 from datetime import datetime, timedelta, timezone
@@ -46,10 +50,14 @@ from core.dates import strict_iso_date  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from features.price_series import AdjustmentBlocked, adjusted_series, raw_series  # noqa: E402
 from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, write_checklist  # noqa: E402
+from ingestion.macro_context import FRED_NOTICE, latest, observations, registered_series, series_info  # noqa: E402
+from ingestion.macro_context import sync_series  # noqa: E402
 from ingestion.gdelt_news import ENTITY_RULE, extract, stories, sync_news_names  # noqa: E402
 from ingestion.gdelt_news import DEDUP_RULE as NEWS_DEDUP_RULE  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
 from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_company, fetch_sebi  # noqa: E402
+from ingestion.news_fetch import FRED_INTERVAL, FetchError, FredClient, RateLimited, fetch_macro_series  # noqa: E402
+from ingestion.news_fetch import fred_key  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
@@ -430,6 +438,91 @@ def show_sebi(args):
     conn.close()
 
 
+def fetch_macro(args):
+    usage = "Usage: python manage.py fetch-macro [--series A,B] [--full]"
+    wanted, full, i = None, False, 0
+    while i < len(args):
+        if args[i] == "--series" and i + 1 < len(args):
+            wanted, i = args[i + 1].split(","), i + 2
+        elif args[i] == "--full":
+            full, i = True, i + 1
+        else:
+            raise SystemExit(usage)
+    log = setup_logging()
+    conn = open_db()
+    added = sync_series(conn)
+    if added:
+        log.info("Macro series newly recorded: %s", ", ".join(added))
+    series = registered_series(conn)
+    if wanted:
+        unknown = sorted(set(wanted) - set(series))
+        if unknown:
+            raise SystemExit(f"Not registered: {', '.join(unknown)} - declare them in config/macro_series.yaml")
+        series = [s for s in series if s in wanted]
+    try:
+        client = FredClient(fred_key())
+    except FetchError as e:
+        conn.close()
+        log.error("FRED: NOT FETCHED - %s", e)
+        raise SystemExit(1) from None
+    log.info("Fetching %s macro series from FRED - at least %.0f second between requests", len(series), FRED_INTERVAL)
+    failed = 0
+    for number, sid in enumerate(series):
+        try:
+            result = fetch_macro_series(conn, client, sid, fetched_dir(), full=full)
+        except RateLimited as e:
+            failed += len(series) - number
+            log.error("%s: NOT FETCHED - %s (%s series left unfetched)", sid, e, len(series) - number)
+            break
+        except Exception as e:  # report and carry on with the next series; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT FETCHED - %s: %s", sid, type(e).__name__, e)
+            continue
+        problems = result.pop("problems", [])
+        log.info("%s: %s", sid, result)
+        for problem in problems:
+            print(f"     {problem}")
+    log.info("FRED requests: %s. %s", client.requests, FRED_NOTICE)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} series not fetched - see the messages above; run fetch-macro again later")
+
+
+def show_macro(args):
+    if len(args) > 1 or (args and args[0].startswith("--")):
+        raise SystemExit("Usage: python manage.py show-macro [SERIES]")
+    conn = open_db()
+    sync_series(conn)
+    now = datetime.now(timezone.utc)
+    when = lambda t: parse_timestamp(t).astimezone(IST).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    sys.stdout.reconfigure(errors="replace")
+    if not args:
+        print("Macro context as known now (current decision). 'public' is India time. Context only - a level is"
+              " never a buy or sell signal on its own (3G).")
+        for sid in registered_series(conn):
+            info, found = series_info(conn, sid), latest(conn, sid, now)
+            shown = (f"{found['date']}  {found['value_text']:>12}  {found['age_days']:>3} days old  public"
+                     f" {when(found['available_at'])}") if found else "nothing fetched yet"
+            print(f"  {info['factor_group']:<22} {sid:<15} {shown}")
+            print(f"  {'':<22} {'':<15} {info['title']}")
+    else:
+        sid = args[0]
+        info = series_info(conn, sid)
+        rows = observations(conn, sid, now)
+        vintages, dates = conn.execute("SELECT COUNT(*), COUNT(DISTINCT obs_date) FROM mc_vintages WHERE series_id = ?",
+                                       [sid]).fetchone()
+        print(f"{sid}: {info['title']} ({info['fred_units']}; {info['frequency']}; {info['kind']}"
+              + (f", closes {info['session_close']} {info['time_zone']}" if info["session_close"] else "") + ")")
+        print(f"  {dates} dates stored with {vintages} vintages ({vintages - dates} revisions); last 20 dates as"
+              " known now - 'public' is India time:")
+        for r in rows[-20:]:
+            value = r["value_text"] if r["value"] is not None else f"none ({r['missing_class']})"
+            start = r["realtime_start"] + (" or earlier" if r["start_clipped"] else "")
+            print(f"  {r['date']}  {value:>32}  vintage from {start:<22} public {when(r['available_at'])}")
+    print(f"  {FRED_NOTICE}")
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -530,6 +623,8 @@ def report(args):
           f"  from {one('SELECT COUNT(*) FROM nw_responses')} responses")
     print(f"SEBI releases:             {one('SELECT COUNT(*) FROM sb_releases')}"
           f"  from {one('SELECT COUNT(*) FROM sb_reads')} reads of the feed")
+    print(f"Macro series (FRED):       {one('SELECT COUNT(*) FROM mc_series')} series,"
+          f" {one('SELECT COUNT(*) FROM mc_vintages')} vintages from {one('SELECT COUNT(*) FROM mc_responses')} answers")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -562,6 +657,8 @@ COMMANDS = {
     "show-news": show_news,
     "fetch-sebi": fetch_sebi_feed,
     "show-sebi": show_sebi,
+    "fetch-macro": fetch_macro,
+    "show-macro": show_macro,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

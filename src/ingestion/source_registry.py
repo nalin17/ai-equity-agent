@@ -35,6 +35,7 @@ ALLOWED_VALUES = {
     "source_class": {
         "exchange_official",   # NSE / BSE publications
         "regulator_official",  # SEBI, RBI
+        "official_statistics", # central banks' and statistics offices' data services (FRED)
         "index_provider",      # NSE Indices
         "company_filing",      # documents filed by the company itself
         "licensed_vendor",     # paid data vendor under licence

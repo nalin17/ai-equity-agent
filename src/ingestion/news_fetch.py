@@ -1,10 +1,16 @@
-"""Fetching news from GDELT's DOC 2.0 API (ADR-005) and SEBI's RSS feed (ADR-006).
+"""Fetching news from GDELT's DOC 2.0 API (ADR-005), SEBI's RSS feed (ADR-006) and macro series
+from FRED's API (ADR-008).
 
 This is the ONLY module in the project allowed to open a network connection, and it contacts
-only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED. NSE data
-is never fetched: NSE's terms forbid it (ADR-004). GDELT's terms allow any use, with citation,
-and GDELT asks callers to space their requests. SEBI's feed asks readers to wait 60 minutes
-between reads; a read sooner is refused before anything is sent.
+only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, and on
+FRED's only the addresses in FRED_PATHS. NSE data is never fetched: NSE's terms forbid it
+(ADR-004). GDELT's terms allow any use, with citation, and GDELT asks callers to space their
+requests. SEBI's feed asks readers to wait 60 minutes between reads; a read sooner is refused
+before anything is sent. FRED allows 120 requests a minute with the owner's own key.
+
+The FRED key (4G rule 5) is read only here, from the environment variable FRED_API_KEY on the
+owner's computer. It goes into the address of each FRED request and nowhere else: never into a
+stored file or table, a log line or an error message. An answer that contains it is not stored.
 
 Rules:
   - Requests are spaced at least MIN_INTERVAL seconds apart. When GDELT refuses (HTTP 429, or its
@@ -21,6 +27,9 @@ Rules:
   - Article links are never opened.
 """
 import hashlib
+import json
+import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -30,12 +39,18 @@ from pathlib import Path
 
 from data_quality.trust_chain import NoDataError
 from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response, news_names, read_response
+from ingestion.macro_context import load_fred_answers, read_observations, read_series_meta, request_for, series_info
 from ingestion.sebi_releases import load_feed, read_feed
 from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
-ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in"})
+ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org"})
 SEBI_FEED = "https://www.sebi.gov.in/sebirss.xml"   # the only address on SEBI's site ever asked for
+FRED_API = "https://api.stlouisfed.org/fred/"
+FRED_PATHS = frozenset({"/fred/series/observations", "/fred/series"})   # the only addresses on FRED's site
+FRED_KEY_VARIABLE = "FRED_API_KEY"
+FRED_KEY_SHAPE = re.compile(r"^[a-z0-9]{32}$")   # FRED: a 32-character lower-case alphanumeric string
+FRED_INTERVAL = 1.0                              # seconds between FRED requests (FRED allows 120 a minute)
 SEBI_WAIT = timedelta(minutes=60)                   # the feed's own time-to-live (ttl 60)
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 USER_AGENT = "ai-equity-agent/1.0 (personal research, non-commercial)"
@@ -61,12 +76,22 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None   # a redirect becomes an error: no host outside ALLOWED_HOSTS is ever reached
 
 
+def _shown(url):
+    """An address as it may appear in a message: without its query, which may hold a key."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"[:80]
+
+
 def _check_host(url):
-    host = urllib.parse.urlsplit(url).hostname
-    if host not in ALLOWED_HOSTS:
-        raise FetchError(f"{url[:60]!r} is not an allowed host (ADR-005, ADR-006)")
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname
+    if host not in ALLOWED_HOSTS or parts.scheme != "https":
+        raise FetchError(f"{_shown(url)!r} is not an allowed host (ADR-005, ADR-006, ADR-008)")
     if host == "www.sebi.gov.in" and url != SEBI_FEED:
-        raise FetchError(f"{url[:60]!r} is not an allowed address: only SEBI's feed is read (ADR-006)")
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only SEBI's feed is read (ADR-006)")
+    if host == "api.stlouisfed.org" and (parts.path not in FRED_PATHS or parts.fragment or parts.netloc != host):
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only FRED's series and observations are"
+                         " read (ADR-008)")
 
 
 def http_get(url):
@@ -80,7 +105,7 @@ def http_get(url):
     except urllib.error.HTTPError as e:
         return e.code, e.read()
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise FetchError(f"GDELT could not be reached: {e}") from None
+        raise FetchError(f"{urllib.parse.urlsplit(url).hostname} could not be reached: {e}") from None
 
 
 def query_for(names):
@@ -207,3 +232,96 @@ def fetch_sebi(conn, out_dir, get=http_get, now=lambda: datetime.now(timezone.ut
         return load_feed(conn, path, retrieved, raw_dir=raw_dir)
     except ArtifactError:
         return {"items": len(items), "note": "identical to a read already stored - nothing new", "problems": []}
+
+
+# ---- FRED (ADR-008) ------------------------------------------------------------------------
+
+def fred_key(environ=None):
+    """The owner's FRED key from the environment, or FetchError. The key itself is never shown."""
+    key = (os.environ if environ is None else environ).get(FRED_KEY_VARIABLE, "").strip()
+    if not FRED_KEY_SHAPE.match(key):
+        raise FetchError(f"{FRED_KEY_VARIABLE} is not set, or is not 32 lower-case letters and digits - set it on"
+                         " this computer as described in docs/decisions/ADR-008; nothing was sent")
+    return key
+
+
+def fred_url(path, params, key):
+    url = FRED_API + path + "?" + urllib.parse.urlencode({**params, "file_type": "json", "api_key": key})
+    _check_host(url)
+    return url
+
+
+def _fred_message(body):
+    """FRED's own message from an error answer, if it gave one."""
+    try:
+        return str(json.loads(body.decode("utf-8")).get("error_message"))[:200]
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        return "no readable message"
+
+
+class FredClient:
+    """Asks FRED with the owner's key, no closer together than FRED_INTERVAL. The key appears only in
+    request addresses: every message leaving here is scrubbed of it."""
+
+    def __init__(self, key, get=http_get, sleep=time.sleep, clock=time.monotonic,
+                 now=lambda: datetime.now(timezone.utc)):
+        self.key, self.get, self.sleep, self.clock, self.now = key, get, sleep, clock, now
+        self.last = None
+        self.requests = 0
+        self.gave_up = False
+
+    def _scrub(self, text):
+        return str(text).replace(self.key, "<key>")
+
+    def fetch(self, path, params):
+        """(body, retrieved_at) of one answer with HTTP 200, or FetchError."""
+        if self.gave_up:
+            raise RateLimited("FRED asked to slow down earlier in this run, so it was not asked again - nothing"
+                              " stored; try again later")
+        if self.last is not None and self.clock() - self.last < FRED_INTERVAL:
+            self.sleep(FRED_INTERVAL - (self.clock() - self.last))
+        self.last = self.clock()
+        self.requests += 1
+        try:
+            status, body = self.get(fred_url(path, params, self.key))
+        except Exception as e:  # every failure leaves here without the key
+            raise FetchError(self._scrub(f"FRED could not be asked: {e}")) from None
+        retrieved = self.now()
+        if self.key.encode() in body:
+            raise FetchError("FRED's answer contained the key - it was not stored")
+        if status == 429:
+            self.gave_up = True
+            raise RateLimited("FRED asked to slow down (HTTP 429) - nothing stored, and FRED is not asked again in"
+                              " this run; try again later")
+        if status != 200:
+            raise FetchError(self._scrub(f"FRED answered HTTP {status}: {_fred_message(body)} - nothing stored"))
+        return body, retrieved
+
+
+def _free_path(path, body):
+    if path.exists() and path.read_bytes() != body:
+        return path.with_name(f"{path.stem}__{hashlib.sha256(body).hexdigest()[:8]}{path.suffix}")
+    return path
+
+
+def fetch_macro_series(conn, client, series_id, out_dir, raw_dir=None, full=False):
+    """Fetch one registered series from FRED and store what is new (ADR-008). Returns the load report.
+    The observations are asked for first and the series description right after, so FRED's stated
+    last update of the series covers every value in the answer. Nothing is written until both
+    answers have been checked."""
+    asked, describe = request_for(conn, series_id, client.now().date(), full=full)
+    obs_body, obs_at = client.fetch("series/observations", asked)
+    rows = read_observations(obs_body, asked)
+    meta_body, meta_at = client.fetch("series", describe)
+    read_series_meta(meta_body, series_info(conn, series_id), meta_at)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = f"fred_{series_id}_{obs_at:%Y%m%d%H%M%S}"
+    obs_path = _free_path(out_dir / f"{stamp}_observations.json", obs_body)
+    meta_path = _free_path(out_dir / f"{stamp}_series.json", meta_body)
+    obs_path.write_bytes(obs_body)
+    meta_path.write_bytes(meta_body)
+    try:
+        return load_fred_answers(conn, series_id, obs_path, obs_at, meta_path, meta_at, asked, raw_dir=raw_dir)
+    except ArtifactError:
+        return {"rows": len(rows), "note": "identical to an answer already stored - nothing new", "problems": []}
