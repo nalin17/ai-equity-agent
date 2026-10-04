@@ -756,7 +756,8 @@ def test_the_fetcher_reaches_only_gdelt_the_sebi_feed_fred_and_mospi():
     with pytest.raises(news_fetch.FetchError, match="only SEBI's feed"):
         news_fetch.http_get("https://www.sebi.gov.in/enforcement/orders.html")   # ADR-006: the feed only
     assert news_fetch.ALLOWED_HOSTS == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org",
-                                        "api.mospi.gov.in"}   # ADR-008, ADR-009
+                                        "api.mospi.gov.in", "www.federalreserve.gov", "www.ecb.europa.eu",
+                                        "www.boj.or.jp"}   # ADR-008, ADR-009, ADR-010
     assert news_fetch.SEBI_FEED == "https://www.sebi.gov.in/sebirss.xml"
 
 
@@ -783,7 +784,8 @@ def test_only_the_news_fetcher_opens_network_connections():
 
 def test_the_news_fetcher_names_no_host_but_gdelt_sebi_fred_and_mospi():
     hosts = set(re.findall(r"https?://([^/\"'\s]+)", FETCHER.read_text(encoding="utf-8")))
-    assert hosts == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in"}
+    assert hosts == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in",
+                     "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp"}   # ADR-010
 
 
 def test_only_manage_py_uses_the_news_fetcher():

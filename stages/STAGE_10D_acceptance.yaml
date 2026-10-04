@@ -1,0 +1,42 @@
+stage: "10D - Macro and geopolitical events"
+status: ACCEPTED_MACRO_EVENTS_BASELINE
+architecture: [40B step 9b, 3G, 4, 4A.0, 4A rules 4 and 5, 4C.1, 4D, 4G, 5B, 5C, 40D, 47 criteria 95 96 98 99, 47A guardrails 19 20, ADR-010]
+proven:
+  - "40B step 9b: an event without an issuer is never attributed to a security except through a declared, recorded route - every event without a route raises NoRoute for every security; a declared read-across route attributes the event with its route recorded, tagged read-across, never a direct observation, and never states an effect (tested)"
+  - A route counts only once it was recorded (under both claims - never reaching back into a past decision), only from its valid_from date, only for its event type and region; its NSE symbol must resolve to its ISIN; a recorded route is never silently changed (tested)
+  - Sector-membership and measured-sensitivity routes are refused until a point-in-time sector classification (9B) or a measured sensitivity (9C) exists - at declaration and by the database (tested)
+  - The Federal Reserve's, ECB's and Bank of Japan's feeds are kept byte for byte; a feed that is not RSS 2.0, declares a DOCTYPE or ENTITY (the BoJ's 'Network Busy' page), or has no items is refused whole; an item is refused and recorded for no title, a link off the issuer's own site, a time without time of day or zone, a wrong weekday or a time after the read; an item is stored once and a changed one is a conflict (tested)
+  - "Types come only from the issuer's own words (rule me-types-1): the Fed's title 'Federal Reserve issues FOMC statement', the ECB's document codes mp and ds, the BoJ's statement files k<yymmdd>, and 'Change in the Guideline for Money Market Operations' as a policy-rate change; near misses and instruction-shaped titles get no type; one meeting is one event (rule me-dedup-1) built only from items known at the decision time (tested)"
+  - Current decisions use this system's first read of an item; historical replay uses the issuer's own stated release time, never earlier (tested)
+  - FRED's release calendar is a snapshot per read; the schedule known at a decision time is the latest read by then; a date added or dropped inside the span both reads cover is recorded as a schedule change; only releases 10, 50 and 53 are asked for (tested)
+  - The first vintage of each new period of US CPI, payrolls and GDP is a major data release with its ALFRED real-time start as the stated date and the vintage's own proof for replay; a revision is not a new release; a period FRED lists without a value is no release; for MoSPI (no release time) only a period new in a later read is a release - released after the previous read, known from this one, for current decisions only - never the history in a series' first read; SEBI circulars naming no company are sector-wide regulation; surprise against consensus is never assessed (tested)
+  - Events declared by the owner in config/declared_events.yaml are checked whole, recorded once, never silently changed, refused for company event types or RBI addresses, and known only from their recording, for current decisions only (tested)
+  - The fetcher asks only the three feed addresses and FRED's release/dates, reads each feed at most once an hour (nothing sent sooner), stores nothing from a failed read, and never stores the FRED key; the ECB alone gets the extra public root, checked against its published fingerprint; certificates and host names are checked for every host (tested, static test)
+  - "Real data (one read of each feed, 04-Oct-2026): Fed 15 items, ECB 15, BoJ 47 - 77 stored, 0 refused; 5 decisions - FOMC statements of 29-Apr, 17-Jun, 29-Jul and 16-Sep-2026, and the BoJ's 18-Sep-2026 meeting typed as a decision and a policy-rate change from its '(Reference)' statement alone; 23 items are communication and 49 unclassified"
+  - "Real data (FRED release calendar, 04-Oct-2026): CPI next on 2026-10-14, 2026-11-10 and 2026-12-10; GDP on 2026-10-29; Employment Situation on 2026-11-06; FRED's 'FOMC Press Release' lists every day of the year and is not used as a meeting calendar"
+  - "Real data on a copy of the owner's database (04-Oct-2026): schema 19, 4 sources registered; 584 events known for current decisions and the same 584 under historical replay - 578 first releases of US CPI, payrolls and GDP since 2006, 1 SEBI circular, 4 FOMC decisions and 1 BoJ decision; the owner's single MoSPI read gives no India release yet; all 85 first-release dates inside FRED's calendar span are on its calendar; 116,800 attribution attempts without a route (584 events x 200 companies) all refused"
+  - "Found in the rehearsal: the first draft dated the history of the owner's first MoSPI read (78 periods back to 2022) as releases on the read day; the rule was changed so that only a period new in a later read is a release, and a test was added"
+  - "Real data: FRED lists October 2025 US CPI without a value from 2025-12-18 - BLS never published it because of the shutdown - and it is not made into a release (regression test)"
+  - 101 of 101 deliberate faults in the new code were caught (two escaped at first - a FRED period listed without a value, and the type check never shown to fail; tests were added); after the shared network module changed, Stage 10C-2 58 of 58, Stage 10C 63 of 63, Stage 10 32 of 32 and Stage 10B 21 of 21 still caught
+  - "Real data (the owner's first live fetch-events, 04-Oct-2026 22:34 India time, on the owner's database): Fed 15 items, ECB 15, BoJ 47 - 77 stored, 0 refused, byte for byte the same feeds as the tested samples; FRED calendar 3 reads of 40 dates each, no schedule change; 584 events known - 4 FOMC decisions, the BoJ's 18-Sep-2026 decision and policy-rate change, 578 US first releases and 1 SEBI circular - and the same 584 under historical replay; all 85 first-release dates inside the calendar span are on it; 1,514,896 attribution attempts without a route (584 events x 2,594 companies) all refused; the FRED key is in no fetched file, raw file, log line or table"
+  - "Real data: the 15 installed files are identical to the tested copies; schema version 19; sources fed_monetary_feed, ecb_press_feed, boj_whatsnew_feed and fred_release_calendar registered; 898 tests passed on the owner's computer"
+not_claimed:
+  BoJ decisions whose statement files never appear in the English feed (on 18-Sep-2026 only the reference statement did): false
+  ECB and BoJ meeting schedules, and FOMC meeting dates before the statement is released: false
+  RBI decisions, budgets, elections, conflicts, OPEC+ and rating actions unless the owner declares them: false
+  GDELT topic searches for geopolitics (waits for the owner's first successful GDELT fetch): false
+  time of day of US releases (FRED's calendar gives dates only): false
+  direction and size of a policy change (only that a decision was taken, and the BoJ's own words that its guideline changed): false
+  surprise of a data release against consensus (no licensed consensus): false
+  event-response measurement, sector routes and sensitivity routes: false
+negative_assertions:
+  event without an issuer attributed to a security without a declared, recorded route: false
+  route declared after a decision used for that decision: false
+  read-across evidence presented as a direct observation about a security: false
+  event type guessed from words other than the issuer's own: false
+  feed item used before this system read it in a current decision: false
+  declared event used in a historical replay: false
+  revised data release counted as a new release: false
+  central bank address other than its one feed address asked for: false
+  certificate checking switched off: false
+  FRED key stored, logged or shown: false

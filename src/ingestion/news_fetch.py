@@ -1,14 +1,19 @@
 """Fetching news from GDELT's DOC 2.0 API (ADR-005), SEBI's RSS feed (ADR-006), macro series
-from FRED's API (ADR-008) and India's macro statistics from MoSPI's API (ADR-009).
+from FRED's API (ADR-008), India's macro statistics from MoSPI's API (ADR-009), and three central
+banks' official feeds and FRED's release calendar (ADR-010).
 
 This is the ONLY module in the project allowed to open a network connection, and it contacts
-only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, and on
+only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, on each
+central bank's site only its feed address in CENTRAL_BANK_FEEDS, and on
 FRED's and MoSPI's only the addresses in FRED_PATHS and MOSPI_PATHS. NSE data is never fetched: NSE's terms forbid it
 (ADR-004). GDELT's terms allow any use, with citation, and GDELT asks callers to space their
 requests. SEBI's feed asks readers to wait 60 minutes between reads; a read sooner is refused
-before anything is sent. FRED allows 120 requests a minute with the owner's own key. MoSPI
+before anything is sent, and the central banks' feeds are read no more often. FRED allows 120 requests a minute with the owner's own key. MoSPI
 needs no key; its server only accepts the old TLS option 'legacy renegotiation', which is
 switched on for that one host - certificates and host names are always checked, for every host.
+The ECB's certificate chains to a public root (Sectigo Public Server Authentication Root E46, in
+Mozilla's list of trusted roots) that Windows may not have loaded; that one root is added for that
+one host, after its published fingerprint is checked (ADR-010).
 
 The FRED key (4G rule 5) is read only here, from the environment variable FRED_API_KEY on the
 owner's computer. It goes into the address of each FRED request and nowhere else: never into a
@@ -45,14 +50,42 @@ from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response,
 from ingestion.india_macro import API_PATHS as MOSPI_DATASET_PATHS, MAX_PAGES, MospiResponseError, load_mospi_pages
 from ingestion.india_macro import page_params, read_page
 from ingestion.macro_context import load_fred_answers, read_observations, read_series_meta, request_for, series_info
+from ingestion.macro_events import calendar_request, load_feed as load_event_feed, load_release_dates
+from ingestion.macro_events import read_feed as read_event_feed, read_release_dates
 from ingestion.sebi_releases import load_feed, read_feed
 from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
-ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in"})
+ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in",
+                           "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp"})
 SEBI_FEED = "https://www.sebi.gov.in/sebirss.xml"   # the only address on SEBI's site ever asked for
+CENTRAL_BANK_FEEDS = {   # the only address on each central bank's site ever asked for (ADR-010)
+    "fed_monetary_feed": "https://www.federalreserve.gov/feeds/press_monetary.xml",
+    "ecb_press_feed": "https://www.ecb.europa.eu/rss/press.html",
+    "boj_whatsnew_feed": "https://www.boj.or.jp/en/rss/whatsnew.xml",
+}
+FEED_OF_HOST = {urllib.parse.urlsplit(url).hostname: url for url in CENTRAL_BANK_FEEDS.values()}
+FEED_WAIT = timedelta(minutes=60)                # a central bank's feed is read at most once an hour
+ECB_HOST = "www.ecb.europa.eu"
+SECTIGO_E46_SHA256 = "C90F26F0FB1B4018B22227519B5CA2B53E2CA5B3BE5CF18EFE1BEF47380C5383"   # Mozilla's CA list
+SECTIGO_E46_PEM = """-----BEGIN CERTIFICATE-----
+MIICOjCCAcGgAwIBAgIQQvLM2htpN0RfFf51KBC49DAKBggqhkjOPQQDAzBfMQsw
+CQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQDEy1T
+ZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBFNDYwHhcN
+MjEwMzIyMDAwMDAwWhcNNDYwMzIxMjM1OTU5WjBfMQswCQYDVQQGEwJHQjEYMBYG
+A1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQDEy1TZWN0aWdvIFB1YmxpYyBT
+ZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBFNDYwdjAQBgcqhkjOPQIBBgUrgQQA
+IgNiAAR2+pmpbiDt+dd34wc7qNs9Xzjoq1WmVk/WSOrsfy2qw7LFeeyZYX8QeccC
+WvkEN/U0NSt3zn8gj1KjAIns1aeibVvjS5KToID1AZTc8GgHHs3u/iVStSBDHBv+
+6xnOQ6OjQjBAMB0GA1UdDgQWBBTRItpMWfFLXyY4qp3W7usNw/upYTAOBgNVHQ8B
+Af8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAwNnADBkAjAn7qRa
+qCG76UeXlImldCBteU/IvZNeWBj7LRoAasm4PdCkT0RHlAFWovgzJQxC36oCMB3q
+4S6ILuH5px0CMk7yn2xVdOOurvulGu7t0vzCAxHrRVxgED1cf5kDW21USAGKcw==
+-----END CERTIFICATE-----
+"""
 FRED_API = "https://api.stlouisfed.org/fred/"
-FRED_PATHS = frozenset({"/fred/series/observations", "/fred/series"})   # the only addresses on FRED's site
+FRED_PATHS = frozenset({"/fred/series/observations", "/fred/series",   # the only addresses on FRED's site
+                        "/fred/release/dates"})
 FRED_KEY_VARIABLE = "FRED_API_KEY"
 FRED_KEY_SHAPE = re.compile(r"^[a-z0-9]{32}$")   # FRED: a 32-character lower-case alphanumeric string
 FRED_INTERVAL = 1.0                              # seconds between FRED requests (FRED allows 120 a minute)
@@ -80,6 +113,10 @@ class RateLimited(FetchError):
     """GDELT kept refusing; the fetcher asks nothing more in this run. Nothing was stored."""
 
 
+class TooSoon(FetchError):
+    """The feed was read less than its waiting time ago. Nothing was sent."""
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None   # a redirect becomes an error: no host outside ALLOWED_HOSTS is ever reached
@@ -98,20 +135,33 @@ def _check_host(url):
         raise FetchError(f"{_shown(url)!r} is not an allowed host (ADR-005, ADR-006, ADR-008)")
     if host == "www.sebi.gov.in" and url != SEBI_FEED:
         raise FetchError(f"{_shown(url)!r} is not an allowed address: only SEBI's feed is read (ADR-006)")
+    if host in FEED_OF_HOST and url != FEED_OF_HOST[host]:
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only the central bank's feed is read (ADR-010)")
     if host == "api.stlouisfed.org" and (parts.path not in FRED_PATHS or parts.fragment or parts.netloc != host):
-        raise FetchError(f"{_shown(url)!r} is not an allowed address: only FRED's series and observations are"
-                         " read (ADR-008)")
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only FRED's series, observations and release"
+                         " dates are read (ADR-008, ADR-010)")
     if host == MOSPI_HOST and (parts.path not in MOSPI_PATHS or parts.fragment or parts.netloc != host):
         raise FetchError(f"{_shown(url)!r} is not an allowed address: only MoSPI's CPI, IIP and national accounts"
                          " data are read (ADR-009)")
 
 
+def ecb_root():
+    """The one extra root used for the ECB only, after checking it against its published fingerprint."""
+    if hashlib.sha256(ssl.PEM_cert_to_DER_cert(SECTIGO_E46_PEM)).hexdigest().upper() != SECTIGO_E46_SHA256:
+        raise FetchError("The stored root certificate for the ECB does not match its published fingerprint - nothing"
+                         " sent (ADR-010)")
+    return SECTIGO_E46_PEM
+
+
 def tls_context(host):
     """Certificates and host names are always checked. MoSPI's server accepts only legacy renegotiation, so
-    that one option is switched on for that one host (ADR-009)."""
+    that one option is switched on for that one host (ADR-009). The ECB's root is added for the ECB only
+    (ADR-010)."""
     context = ssl.create_default_context()
     if host == MOSPI_HOST:
         context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0x4)
+    if host == ECB_HOST:
+        context.load_verify_locations(cadata=ecb_root())
     return context
 
 
@@ -412,3 +462,46 @@ def fetch_india_request(conn, client, dataset, request, out_dir, raw_dir=None):
         return load_mospi_pages(conn, dataset, request, pages, raw_dir=raw_dir)
     except ArtifactError:
         return {"pages": len(pages), "note": "identical to answers already stored - nothing new", "problems": []}
+
+
+# ---- central banks' feeds and FRED's release calendar (ADR-010) ------------------------------------
+
+def fetch_central_bank(conn, source_id, out_dir, get=http_get, now=lambda: datetime.now(timezone.utc), raw_dir=None):
+    """Read one central bank's official feed once and store its items (ADR-010). Returns the load report.
+    The feed is checked before anything is written."""
+    if source_id not in CENTRAL_BANK_FEEDS:
+        raise FetchError(f"{source_id!r} is not a declared central-bank feed (ADR-010)")
+    last = conn.execute("SELECT MAX(a.retrieved_at) FROM me_reads r JOIN raw_artifacts a ON a.artifact_id = r.artifact_id"
+                        " WHERE r.source_id = ?", [source_id]).fetchone()[0]
+    if last and now() - parse_timestamp(last) < FEED_WAIT:
+        raise TooSoon(f"{source_id} was last read at {last[:16]} UTC; it is read at most once every"
+                      f" {FEED_WAIT.seconds // 60} minutes - nothing sent")
+    status, body = get(CENTRAL_BANK_FEEDS[source_id])
+    retrieved = now()
+    if status != 200:
+        raise FetchError(f"{source_id} answered HTTP {status} - nothing stored")
+    items = read_event_feed(body)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = _free_path(out_dir / f"{source_id}_{retrieved:%Y%m%d%H%M%S}.xml", body)
+    path.write_bytes(body)
+    try:
+        return load_event_feed(conn, source_id, path, retrieved, raw_dir=raw_dir)
+    except ArtifactError:
+        return {"items": len(items), "note": "identical to a read already stored - nothing new", "problems": []}
+
+
+def fetch_release_calendar(conn, client, release_id, out_dir, raw_dir=None):
+    """Read FRED's calendar for one declared release with the owner's key and store it (ADR-010). Returns
+    the load report. The answer is checked before anything is written."""
+    body, retrieved = client.fetch("release/dates", calendar_request(release_id))
+    dates = read_release_dates(body, release_id)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = _free_path(out_dir / f"fredcal_{release_id}_{retrieved:%Y%m%d%H%M%S}.json", body)
+    path.write_bytes(body)
+    try:
+        return load_release_dates(conn, release_id, path, retrieved, raw_dir=raw_dir)
+    except ArtifactError:
+        return {"dates_listed": len(dates), "note": "identical to an answer already stored - nothing new",
+                "problems": []}

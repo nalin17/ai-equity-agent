@@ -1,0 +1,25 @@
+-- Undo 0019_macro_events.
+DROP TRIGGER IF EXISTS me_routes_no_delete;
+DROP TRIGGER IF EXISTS me_routes_no_update;
+DROP TRIGGER IF EXISTS me_declared_no_delete;
+DROP TRIGGER IF EXISTS me_declared_no_update;
+DROP TRIGGER IF EXISTS me_calendar_changes_no_delete;
+DROP TRIGGER IF EXISTS me_calendar_changes_no_update;
+DROP TRIGGER IF EXISTS me_calendar_dates_no_delete;
+DROP TRIGGER IF EXISTS me_calendar_dates_no_update;
+DROP TRIGGER IF EXISTS me_calendar_reads_no_delete;
+DROP TRIGGER IF EXISTS me_calendar_reads_no_update;
+DROP TRIGGER IF EXISTS me_problems_no_delete;
+DROP TRIGGER IF EXISTS me_problems_no_update;
+DROP TRIGGER IF EXISTS me_items_no_delete;
+DROP TRIGGER IF EXISTS me_items_no_update;
+DROP TRIGGER IF EXISTS me_reads_no_delete;
+DROP TRIGGER IF EXISTS me_reads_no_update;
+DROP TABLE IF EXISTS me_routes;
+DROP TABLE IF EXISTS me_declared;
+DROP TABLE IF EXISTS me_calendar_changes;
+DROP TABLE IF EXISTS me_calendar_dates;
+DROP TABLE IF EXISTS me_calendar_reads;
+DROP TABLE IF EXISTS me_problems;
+DROP TABLE IF EXISTS me_items;
+DROP TABLE IF EXISTS me_reads;

@@ -1,74 +1,68 @@
 # HANDOFF - AI Self-Learning Equity Research Agent
 
-Rewritten 2026-10-04 at the end of the third long build chat (Stages 10C and 10C-2), so
+Rewritten 2026-10-04 at the end of the third long build chat (Stages 10C and 10C-2) and
+updated the same evening in the fourth chat (Stage 10D, macro and geopolitical events), so
 that a new chat can continue without losing anything. Read this WHOLE file before doing
-anything else. It replaces the 2026-10-03 handoff and keeps everything that was in it.
+anything else. It keeps everything that was in the earlier handoffs.
 The governing architecture is `docs/Master_Architecture_v2_2_0_FROZEN.md` (v2.2.0).
 
 ---
 
-## 0. Read first - exact state at the end of the third chat (04-Oct-2026, about 18:30 India time)
+## 0. Read first - exact state at the end of the fourth chat (04-Oct-2026, about 23:00 India time)
 
 | Item | State |
 |---|---|
-| Last pushed commit | `36450db` Stage 10C (FRED/ALFRED macro context, ADR-008). CI green. 632 tests. |
-| Working tree (NOT committed yet) | Stage 10C-2 installed by the owner: 10 new files + 6 patched files. All 16 were checked byte for byte (new files) and with `diff --strip-trailing-cr` (patched files) against the tested copies: identical. |
-| Tests on the owner's computer | `740 passed` (test_output.txt, 04-Oct 17:58) |
-| Database | `data/equity.sqlite`, schema version 18 (migrations 0001-0018). Backup before 10C-2: `data/equity_before_10c2.sqlite`; before 10C: `data/equity_before_10c.sqlite`. |
-| First live fetch-india | Done by the owner 04-Oct-2026 17:59 India time and VERIFIED: 9 series, 15 requests, 5 reads of 15 pages, 461 values, 24 blank year-on-year rates counted, 0 refused, 0 problems - identical to the tested copy. |
-| Acceptance record update | Script ready and tested (twice, second run STOPs): `data\handover\stage10c2\patch_stage10c2_record.py`. NOT run yet. |
-| This handoff | `data\handover\HANDOFF_new.md`; it becomes `docs\HANDOFF.md` in the 10C-2 commit (section 0.1). |
-| Next build | Stage 10D = architecture 40B step 9b, Macro and Geopolitical Events (section 14). |
+| Last pushed commit | `bfa5c8f` Stage 10C-2 (MoSPI India macro and market calendars, ADR-009). CI green. 740 tests. Verified in the fourth chat (files equal the tested copies, record patch done, handoff copied). |
+| Working tree (NOT committed yet) | Stage 10D installed by the owner: 9 new files + 6 patched files. All 15 checked against the tested copies (`diff -q --strip-trailing-cr`; the new modules and tests byte for byte): identical. |
+| Tests on the owner's computer | `898 passed` (test_output.txt, 04-Oct 22:29) |
+| Database | `data/equity.sqlite`, schema version 19 (migrations 0001-0019), 18 sources. Backup before 10D: `data/equity_before_10d.sqlite`; before 10C-2: `data/equity_before_10c2.sqlite`; before 10C: `data/equity_before_10c.sqlite`. |
+| First live fetch-events | Done by the owner 04-Oct-2026 22:34 India time and VERIFIED: Fed 15 items, ECB 15, BoJ 47 (77 stored, 0 refused, byte for byte the research samples); FRED calendar 3 reads x 40 dates, no schedule change; 584 events (4 FOMC decisions, BoJ 18-Sep decision + rate change, 578 US first releases, 1 SEBI circular), same under replay; 1,514,896 attribution attempts without a route all refused; FRED key in no file, log or table. |
+| Acceptance record update | Script ready and tested (second run STOPs): `data\handover\stage10d\patch_stage10d_record.py`. NOT run yet. |
+| This handoff | `data\handover\HANDOFF_new.md`; it becomes `docs\HANDOFF.md` in the 10D commit (section 0.1). |
+| Next build | Stage 10E = architecture 40B step 9c, Aggregate Investor Flows (section 14). |
 
-If `git log -1` still shows `36450db`, the Stage 10C-2 commit has NOT been made yet: do
-section 0.1 first. If it shows a "Stage 10C-2" commit, verify it (section 0.1, "After done").
+If `git log -1` still shows `bfa5c8f`, the Stage 10D commit has NOT been made yet: do
+section 0.1 first. If it shows a "Stage 10D" commit, verify it (section 0.1, "After done").
 
-### 0.1 Finishing Stage 10C-2 (owner commands; the assistant only verifies)
+### 0.1 Finishing Stage 10D (owner commands; the assistant only verifies)
 
 The owner runs, in PowerShell from the project folder with the venv active
 (`.venv\Scripts\Activate.ps1`), one block at a time:
 
 ```powershell
-python data\handover\stage10c2\patch_stage10c2_record.py
+python data\handover\stage10d\patch_stage10d_record.py
 ```
-Expected: `patched stages/STAGE_10C2_acceptance.yaml` (a second run prints `STOP: the live
+Expected: `patched stages/STAGE_10D_acceptance.yaml` (a second run prints `STOP: the live
 run is already recorded. Nothing was changed.`). It removes the not_claimed line "first
-live fetch-india run by the owner (verified after this commit)" and adds two proven lines
-with the live numbers.
+live fetch-events run by the owner (verified after this stage is installed)" and adds two
+proven lines with the live numbers.
 
 ```powershell
 Copy-Item data\handover\HANDOFF_new.md docs\HANDOFF.md
 ```
-(Overwrites the tracked handoff with this file - git keeps the old one.)
 
 ```powershell
 python -m pytest -q > test_output.txt 2>&1; Get-Content test_output.txt -Tail 1
 ```
-Expected: `740 passed` (test_architecture_baseline requires docs/HANDOFF.md and README.md
-to contain the text `Master_Architecture_v2_2_0_FROZEN.md` - this file does).
+Expected: `898 passed`.
 
 ```powershell
 git add src tests migrations config stages docs manage.py README.md
-git commit -m "Stage 10C-2: India macro statistics from MoSPI eSankhyiki and market calendars (ADR-009) - CPI, IIP and GDP as current-decision context from the first read; New York, Tokyo and NSE/BSE calendars set aside closes repeated on closed days; legacy TLS for MoSPI only, certificates always checked" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "Stage 10D: macro and geopolitical events (ADR-010) - Federal Reserve, ECB and Bank of Japan decisions from their official feeds, FRED's release calendar, US and India data releases and SEBI circulars as events without an issuer; an event reaches a company only through a declared, recorded route; extra public root for the ECB only, certificates always checked" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git push
 ```
 
 After the owner replies "done", verify (method section 5 step 7):
 - `git log --oneline -2`, `git status --short` (must be empty; `data/` and
   test_output.txt are ignored), HEAD equals origin/main (`git rev-parse HEAD origin/main`).
-- `test_output.txt` last line (it is UTF-16 - decode as UTF-16): 740 passed.
-- Committed files equal the tested copies: new files in
-  `data\handover\stage10c2\files\` (cmp), patched files equal what is on disk now; the
-  acceptance record has the two new "first live fetch-india" lines and no longer the
-  not_claimed line; docs/HANDOFF.md equals data/handover/HANDOFF_new.md
-  (`diff -q --strip-trailing-cr`).
+- `test_output.txt` last line (UTF-16): 898 passed.
+- Committed files equal the tested copies: new files in `data\handover\stage10d\files\`
+  (the acceptance record differs only by the record patch), patched files equal
+  `data\handover\stage10d\work\repo\`; docs/HANDOFF.md equals data/handover/HANDOFF_new.md.
 - CI: `curl -s "https://api.github.com/repos/nalin17/ai-equity-agent/actions/runs?per_page=2"`
   (status completed, conclusion success, head_sha = the new commit).
-- Then offer to delete the 143 MB scratch environment `C:\Users\nalin\AppData\Local\Temp\xcal`
-  (exchange_calendars 4.13.2 for regenerating calendars - the owner was told it would be
-  deleted after the commit unless they want it kept; it can be recreated in 2 minutes:
-  `python -m venv xcal` then `xcal\Scripts\pip install exchange_calendars==4.13.2`, with
-  the owner's permission, because pip downloads files).
+- The xcal scratch environment (`C:\Users\nalin\AppData\Local\Temp\xcal`, 143 MB) is KEPT
+  until the calendars are extended in December (owner decision 04-Oct-2026).
 
 ### 0.2 Things the owner still has to do
 
@@ -83,13 +77,21 @@ After the owner replies "done", verify (method section 5 step 7):
    `python manage.py fetch-sebi` (at least once a day - SEBI's feed holds only about three
    working days; LAST READ WAS 03-Oct-2026 15:06 India time, so run it on Monday 05-Oct at
    the latest), `python manage.py fetch-news`, `python manage.py fetch-macro`,
-   `python manage.py fetch-india`.
+   `python manage.py fetch-india`, `python manage.py fetch-events` (Stage 10D; a second run
+   within an hour says "skipped").
 3. The first live `fetch-news` (GDELT) is STILL outstanding: nw_responses = 0. Run
    `python manage.py fetch-news` then `python manage.py show-news HDFCBANK`; if it ends
    "NOT FETCHED - GDELT refused", nothing is wrong; try again hours later. Reply "fetched"
-   so the assistant can verify (section 9.6).
-4. Optional, for Stage 11 sentiment: the Alpha Vantage probe (section 13.3).
-5. Open decisions (the assistant raises them at the right stage): the 30-company coverage
+   so the assistant can verify (section 9.6). GDELT topic searches for geopolitics (a
+   later step) wait for this.
+4. When a key event happens that no feed brings in (RBI MPC decision, Union Budget,
+   election result, OPEC+ decision, sovereign rating action, war or ceasefire), add it to
+   `config/declared_events.yaml` (fields and types are explained at the top of that file;
+   cite a public source, never an rbi.org.in address) and run fetch-events; the assistant
+   can prepare the entry after checking a primary source. Routes to companies go in
+   `config/event_routes.yaml` - only when the owner decides a link is real.
+5. Optional, for Stage 11 sentiment: the Alpha Vantage probe (section 13.3).
+6. Open decisions (the assistant raises them at the right stage): the 30-company coverage
    cohort is NOT chosen (architecture 3A.2 rule 5: rule mechanical, preregistered, dated);
    price history for step 6a (NSE research request first; an authorised paid vendor if too
    slow - each paid source needs the owner's approval with its price and terms; the owner
@@ -147,7 +149,7 @@ After the owner replies "done", verify (method section 5 step 7):
 | Tests | pytest; `pytest.ini`: pythonpath = src, testpaths = tests, addopts = -p no:cacheprovider |
 | CI | `.github/workflows/tests.yml`, Python 3.14, runs pytest on every push (Linux) |
 | Dependencies | requirements.txt: pytest, pyyaml (nothing else); network code uses only the standard library (urllib, ssl). exchange_calendars is NOT a dependency - it only generated config/market_calendars.yaml |
-| Internet use by the program | only `src/ingestion/news_fetch.py`, allow-list of 4 hosts: api.gdeltproject.org (fetch-news, ADR-005), www.sebi.gov.in (only /sebirss.xml, fetch-sebi, ADR-006), api.stlouisfed.org (fetch-macro, ADR-008), api.mospi.gov.in (fetch-india, ADR-009). Everything else is hand downloads |
+| Internet use by the program | only `src/ingestion/news_fetch.py`, allow-list of 7 hosts: api.gdeltproject.org (fetch-news, ADR-005), www.sebi.gov.in (only /sebirss.xml, fetch-sebi, ADR-006), api.stlouisfed.org (fetch-macro; /fred/release/dates for fetch-events, ADR-008, ADR-010), api.mospi.gov.in (fetch-india, ADR-009), www.federalreserve.gov (only /feeds/press_monetary.xml), www.ecb.europa.eu (only /rss/press.html), www.boj.or.jp (only /en/rss/whatsnew.xml) - the last three for fetch-events, ADR-010. Everything else is hand downloads |
 | FRED key | Windows USER environment variable `FRED_API_KEY`, set by the owner in their own PowerShell; read only by news_fetch.py; never in chat, repo, DB, files, logs, URLs stored or errors |
 | Git line endings | core.autocrlf=true; index is LF; working files are CRLF or mixed - fine |
 | `.gitignore` | .venv/, __pycache__/, *.pyc, .pytest_cache/, .env, data/, *.duckdb, *.parquet, logs/, test_output.txt, git_status.txt |
@@ -189,6 +191,11 @@ After the owner replies "done", verify (method section 5 step 7):
     api.mospi.gov.in with legacy TLS renegotiation for that host only; calendars generated
     from exchange_calendars (Apache-2.0, licence text in
     `docs/third_party/exchange_calendars-LICENSE.txt`).
+  - ADR-010 central banks' feeds and macro events (Stage 10D): hosts www.federalreserve.gov,
+    www.ecb.europa.eu, www.boj.or.jp (one feed address each, at most hourly) and FRED's
+    /fred/release/dates; the public root Sectigo Public Server Authentication Root E46 added
+    for the ECB only (fingerprint checked); issuer's own release time accepted for replay;
+    owner-declared events and routes.
 - Scope (architecture section 3): one exchange (NSE, India), 30-company focus cohort
   first. Other countries' stocks are never covered; world markets, rates, FX,
   commodities and geopolitics enter as macro context (3G) and events (4A.0). Outputs
@@ -200,10 +207,11 @@ After the owner replies "done", verify (method section 5 step 7):
 1. NSE's Terms of Use (updated 29-Oct-2025) prohibit systematic or automated data
    collection. Do NOT build scrapers, do not bulk-download through the browser, do not
    use nsepython/jugaad-data or "NSE scraper" APIs. Static tests fail if any module other
-   than `src/ingestion/news_fetch.py` imports a network library
+   than `src/ingestion/news_fetch.py` imports a network library (including urllib.parse -
+   macro_events.py checks link hosts with regular expressions for that reason)
    (`tests/test_stage08c_intake.py::test_no_code_contacts_a_website`,
    `tests/test_stage10_news.py::test_only_the_news_fetcher_opens_network_connections`).
-   news_fetch.py may call only the 4 allowed hosts (section 2) and only their declared
+   news_fetch.py may call only the 7 allowed hosts (section 2) and only their declared
    paths; it follows no redirects. Any new network source needs the owner's approval, an
    ADR, a terms check and a change to the allow-list and its tests (architecture 4G).
 2. LICENSED ONLY (owner decision 03-Oct-2026): from GitHub/Hugging Face take only what the
@@ -239,7 +247,15 @@ After the owner replies "done", verify (method section 5 step 7):
 11. Never put real individuals' names or tax ids (they appear in SEBI titles) into tests
     or the public repository; use company names in fixtures.
 12. Certificate checking is never switched off (a static test enforces it). Only
-    api.mospi.gov.in gets `ssl.OP_LEGACY_SERVER_CONNECT`, nothing else.
+    api.mospi.gov.in gets `ssl.OP_LEGACY_SERVER_CONNECT`, nothing else. Only
+    www.ecb.europa.eu gets the extra root (Sectigo E46, SHA-256 C90F26F0...47380C5383,
+    checked against its published fingerprint before use; Windows on the owner's computer
+    had not loaded it).
+14. A macro, policy or geopolitical event has no issuer and is never attributed to a
+    security except through a route declared in config/event_routes.yaml and recorded in
+    me_routes (40B step 9b, 4A rule 5). Only read_across routes exist until a point-in-time
+    sector classification (9B) or a measured sensitivity (9C) is registered; the database
+    refuses the other kinds.
 13. Macro series are context only: never a covered security, target or benchmark (static
     tests: no target/benchmark/ledger/calibration/validation/model/universe module imports
     the macro context).
@@ -263,8 +279,12 @@ After the owner replies "done", verify (method section 5 step 7):
    every run goes through a dead proxy (HTTPS_PROXY to 127.0.0.1:9) so no fault can reach
    the internet. When one survives, add the missing test. When shared code changes, re-run
    the older stages' scripts too and update anchors that the new code duplicated or
-   reshaped. Final counts: Stage 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58. Scripts:
-   `data\handover\tools\mutate_stage10*.py <scratch repo root>`.
+   reshaped. Final counts: Stage 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58, 10D 101/101.
+   Scripts: `data\handover\tools\mutate_stage10*.py <scratch repo root>` (all five take
+   the root and use the dead proxy; mutate_stage10.py and mutate_stage10b.py were fixed in
+   the fourth chat - they used to restore files in text mode, which turned LF into CRLF).
+   Since Stage 10D the scratch copy lives in `data\handover\<stage>\work\repo` (survives a
+   chat that stops mid-task).
 4. Run the real data on a COPY of the owner's database (`cp data/equity.sqlite`), with
    copies of their downloads (never touch their Downloads folder), and record the real
    numbers in the acceptance record (`tools\smoke_*.py <scratch root>`).
@@ -280,7 +300,8 @@ After the owner replies "done", verify (method section 5 step 7):
      A folder in the session scratchpad disappears when the chat ends - anything that
      must survive goes under `data\handover\` (git-ignored, persistent).
    - Edits to existing files: a checked Python patch script (`patch_*.py`, generated with
-     difflib from the tested copy) that normalises CRLF, checks every anchor occurs exactly
+     `data\handover\tools\make_patch.py <owner repo> <tested repo> <out.py> <title> <files>`,
+     which uses difflib and refuses to write unless the simulated patch reproduces the tested copy) that normalises CRLF, checks every anchor occurs exactly
      once AND that the new text is not already present, validates everything before
      writing anything, writes with `newline="\r\n"`, prints `patched <file>` per file and
      `PATCH COMPLETE`, or `STOP: ... Nothing was changed`. Test it on copies of the
@@ -325,7 +346,7 @@ After the owner replies "done", verify (method section 5 step 7):
    - Windows time zones: `[System.TimeZoneInfo]` in PowerShell was used to verify the
      hand-coded session rules (core/sessions.py) at 271,700 checkpoints.
 
-## 6. Stage history (all ACCEPTED; all pushed except 10C-2; CI green)
+## 6. Stage history (all ACCEPTED; all pushed except 10D; CI green)
 
 | Stage | Commit | Architecture | What it proved |
 |---|---|---|---|
@@ -349,26 +370,28 @@ After the owner replies "done", verify (method section 5 step 7):
 | 10B | ac0633f | 40B step 9, 4A, 5B, ADR-006 | SEBI releases from its RSS feed; public only from the first read; companies by exact registered name (sb-entity-1); kinds from SEBI's sections (sb-kinds-1) |
 | arch v2.2.0 | 9bb500f | 46, ADR-007 | architecture amended by insertion only; control audit test in CI; second handoff |
 | 10C | 36450db | 40B step 9a, 3G, 4G, 5A.1, 5B, 5C, ADR-008 | 25 FRED/ALFRED series with session, time zone, publication time and vintages; a foreign close never reaches an Indian decision before its session ended; the FRED key stays on the owner's computer |
-| 10C-2 | (to commit, section 0.1) | 40B step 9a, 4C, 4G, 5A.1, 5B, 5C, ADR-009 | India CPI/IIP/GDP from MoSPI (current decisions only); market calendars XNYS/XTKS/XBOM set aside closes repeated on closed days |
+| 10C-2 | bfa5c8f | 40B step 9a, 4C, 4G, 5A.1, 5B, 5C, ADR-009 | India CPI/IIP/GDP from MoSPI (current decisions only); market calendars XNYS/XTKS/XBOM set aside closes repeated on closed days |
+| 10D | (to commit, section 0.1) | 40B step 9b, 4A.0, 4A rules 4-5, 4G, 5B, 5C, ADR-010 | macro events without an issuer - Fed/ECB/BoJ decisions, US and India data releases, SEBI circulars, owner-declared events; attribution only through a declared, recorded route |
 
 Acceptance records with exact claims, not-claimed items and negative assertions are in
-`stages/STAGE_*_acceptance.yaml` (20 files after 10C-2; statuses such as
-ACCEPTED_MACRO_CONTEXT_BASELINE for 10C and ACCEPTED_INDIA_MACRO_AND_CALENDARS_BASELINE
-for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
+`stages/STAGE_*_acceptance.yaml` (21 files after 10D; statuses such as
+ACCEPTED_MACRO_CONTEXT_BASELINE for 10C, ACCEPTED_INDIA_MACRO_AND_CALENDARS_BASELINE
+for 10C-2 and ACCEPTED_MACRO_EVENTS_BASELINE for 10D). `core/status.load_acceptance_records` checks them in the tests.
 
-## 7. Current state (verified 2026-10-04)
+## 7. Current state (verified 2026-10-04, after the Stage 10D install)
 
 - Tests: 393 at Stage 9; 482 after 10; 518 after 10B; 521 after v2.2.0; 632 after 10C;
-  740 after 10C-2. Per file: architecture_baseline 3, stage01 5, stage02 19, stage03 47,
+  740 after 10C-2; 898 after 10D (stage10d_macro_events 158). Per file: architecture_baseline 3, stage01 5, stage02 19, stage03 47,
   stage04a 12, stage04b 27, stage05 30, stage06 31, stage07a 25, stage07b 38, stage07c 45,
   stage07d 15, stage08 23, stage08b 19, stage08c 10, stage08d 19, stage09 25, stage10 89,
   stage10b 36, stage10c_macro 111, stage10c2_india_calendars 108, static_rules 3.
-- Schema version 18; migrations 0001-0018 (create source registry, entities,
+- Schema version 19; migrations 0001-0019 (create source registry, entities,
   source_class, data_trust, pit_facts, historical_universe, market_adapters,
   corporate_actions, corporate_action_files, identity_bridges, financial_results,
   integrated_filings, revision_corrections, announcements, news, sebi_releases,
-  macro_context, india_macro), each with up and down files.
-- Sources registered (14): fred_alfred, gdelt_doc_news, market_calendars,
+  macro_context, india_macro, macro_events), each with up and down files.
+- Sources registered (18): boj_whatsnew_feed, ecb_press_feed, fed_monetary_feed,
+  fred_alfred, fred_release_calendar, gdelt_doc_news, market_calendars,
   mospi_esankhyiki, nse_announcements, nse_bhavcopy_equity, nse_corporate_actions,
   nse_equity_list, nse_financial_results_index, nse_financial_results_xbrl,
   nse_index_constituents, nse_integrated_filing_index, nse_integrated_filing_xbrl,
@@ -382,7 +405,8 @@ for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
   (first fetch not run yet); FRED: 25 series, 68 responses, 59,971 vintages, 0 problems
   (first live run 03-Oct 22:01, second 42 minutes later stored nothing new; a run on
   04-Oct 17:56 found everything already present); MoSPI: 9 series, 5 reads, 15 pages,
-  461 values, 0 problems (04-Oct 17:59).
+  461 values, 0 problems (04-Oct 17:59); macro events (04-Oct 22:34): 3 feed reads, 77
+  items, 3 calendar reads (120 dates), 0 declared events, 0 routes - 584 events known.
 - Historical-universe tables exist but hold no versions yet (universe_versions 0).
 - `data/inbox` holds 32 files (all ingested); `data/fetched` holds the SEBI reads, FRED
   answers (fred_*.json) and MoSPI pages (15 files mospi_<dataset>_<key8>_<UTC stamp>_p<n>.json);
@@ -398,8 +422,10 @@ for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
   fetch-sebi, show-sebi [--symbol SYMBOL] [FROM] [TO],
   fetch-macro [--series A,B] [--full], show-macro [SERIES] (warns when the market
   calendars end within 60 days), fetch-india [--series A,B], show-india [SERIES],
+  fetch-events [--no-calendar], show-macro-events [FROM] [TO] [--all],
   ingest-inbox [--without-listing] [FOLDER], checklist [LISTING...] [--symbols A,B]
-  [--since DATE] [--prices-from DATE], report (has lines for macro and "India macro (MoSPI)").
+  [--since DATE] [--prices-from DATE], report (has lines for macro, "India macro (MoSPI)"
+  and "Macro events (central banks)").
 - `src/core/` - config, database (`connect`, `migrate`, `rollback`, `run_in_transaction`,
   `now_utc`), dates (`strict_iso_date`), logging_setup, status (2A vocabulary,
   `load_acceptance_records`; status must be a fixed status or ACCEPTED_<X>_BASELINE; every
@@ -412,7 +438,10 @@ for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
   file mtime).
 - `src/data_quality/` - missing_data (`MissingClass`: not_applicable, not_yet_released,
   not_disclosed, extraction_failure, source_conflict, structurally_absent), trust_chain
-  (`NoDataError` ...), extraction_confidence (`ExtractionConfidence`, 4A rule 4).
+  (`NoDataError` ...), extraction_confidence (`ExtractionConfidence`, 4A rule 4; since 10D
+  also issuer_document_code, issuer_title, statistics_release, regulator_section,
+  owner_declared, not_typed for how a macro event's type was read - values never written
+  as string literals elsewhere, so the declared-events source label is "declared_by_owner").
 - `src/provenance/` - availability (`disposition(claim, decision_time, retrieved_at,
   published_at)`, `PitClaim.CURRENT_DECISION/HISTORICAL_REPLAY`, `Availability` ELIGIBLE /
   NOT_ELIGIBLE / AVAILABILITY_REVIEW, `parse_timestamp` - timezone mandatory), raw_store
@@ -425,17 +454,20 @@ for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
   unattributed_rumour / non_public_information; `sync_sources` never silently changes a
   registration), market_adapters, corporate_actions + nse_corporate_actions,
   nse_financial_results, intake, nse_announcements, gdelt_news (section 9), sebi_releases
-  (9.7), macro_context (section 10), india_macro (section 11), news_fetch (the ONLY
-  network code: GDELT Fetcher, `fetch_sebi`, `fred_key`, `FredClient`,
-  `fetch_macro_series`, `MospiClient`, `fetch_india_request`, `tls_context(host)`,
-  `http_get`, `_check_host`, `_NoRedirect`).
+  (9.7), macro_context (section 10), india_macro (section 11), macro_events and
+  event_routes (section 11B), news_fetch (the ONLY network code: GDELT Fetcher,
+  `fetch_sebi`, `fred_key`, `FredClient`, `fetch_macro_series`, `MospiClient`,
+  `fetch_india_request`, `CENTRAL_BANK_FEEDS`, `fetch_central_bank`, `TooSoon`,
+  `fetch_release_calendar`, `ecb_root`, `tls_context(host)`, `http_get`, `_check_host`,
+  `_NoRedirect`).
 - `src/features/price_series.py` - raw/adjusted series.
 - Empty packages reserved for later steps: abstention, calibration, experiments, ledger,
   models, regimes, research, targets, validation.
 - `config/` - settings.yaml, sources.yaml (14 sources), news_names.yaml (9.2),
   macro_series.yaml (25 FRED series), india_macro_series.yaml (9 MoSPI series),
-  market_calendars.yaml (3 calendars + series_calendars mapping).
-- `stages/` - one acceptance record per stage. `docs/decisions/` - ADR-001..009.
+  market_calendars.yaml (3 calendars + series_calendars mapping), declared_events.yaml and
+  event_routes.yaml (human-owned, Stage 10D; both empty lists with instructions).
+- `stages/` - one acceptance record per stage. `docs/decisions/` - ADR-001..010.
   `docs/third_party/` - exchange_calendars licence.
 
 ## 9. Stage 10 (news from GDELT) and Stage 10B (SEBI) in detail
@@ -602,7 +634,7 @@ for the run, count nw_responses / nw_articles / nw_extractions by role, list
   revisions older than the look-back unless --full; early-close times; macro exposure
   features and regime states; US release consensus/surprise.
 
-## 11. Stage 10C-2 (MoSPI India macro + market calendars, ADR-009) in detail - installed, to commit
+## 11. Stage 10C-2 (MoSPI India macro + market calendars, ADR-009) in detail - committed bfa5c8f
 
 - Owner decisions (04-Oct-2026): no academic affiliation; MoSPI samples approved (~12
   requests); MoSPI approved as the 4th host (ADR-009) with legacy TLS for that host only;
@@ -679,6 +711,70 @@ for the run, count nw_responses / nw_articles / nw_extractions by role, list
 - Live values (04-Oct-2026): CPI Aug-2026 index 108.74, inflation 4.82; CPI back series to
   Dec-2024 102.90 / 5.22 (reconstructed); IIP Aug-2026 123.3, growth 8.0, manufacturing
   126.6; GDP Apr-Jun 2026 8,136,153 crore real and 8,826,871 crore nominal.
+
+## 11B. Stage 10D (macro and geopolitical events, ADR-010) in detail - installed, to commit
+
+- Owner decisions (04-Oct-2026): all three central-bank feeds; key events by the owner's own
+  list now, GDELT topic searches later; samples approved; ECB root "for the ECB only";
+  replay uses the issuer's own release time; xcal kept until December.
+- Sources: Fed https://www.federalreserve.gov/feeds/press_monetary.xml (public domain, cite
+  the Board; ~15 items over 6 months; FOMC statement always "Federal Reserve issues FOMC
+  statement", 18:00 GMT); ECB https://www.ecb.europa.eu/rss/press.html (free use, ECB cited,
+  crawl-delay 5; 15 items ~10 days; decision document code ecb.mp, combined statement
+  ecb.ds, speeches sp, interviews in, accounts mg, other decisions gc, press releases pr;
+  decisions 14:15 Frankfurt); BoJ https://www.boj.or.jp/en/rss/whatsnew.xml (copy with
+  credit, not commercial; ~47 items ~4 weeks; statements are files
+  /en/mopo/mpmdeci/mpr_YYYY/kYYMMDD<letter>; on 18-Sep-2026 only the "(Reference)" k260918b
+  was in the feed, not the main k260918a; links are http://); FRED /fred/release/dates for
+  releases 10 (CPI), 50 (Employment Situation), 53 (GDP), 40 dates desc with future dates.
+  FRED's release 101 "FOMC Press Release" lists every day of the year (not usable). PIB's feed
+  (20 items, no dates, no ministry) not used.
+- macro_events.py: MACRO_EVENT_TYPES = the five v2.2.0 groups of 4A.0 (a test reads them
+  from the architecture); REGIONS; FEEDS (institution, region, own-site regex);
+  `parse_pub_date` (time and zone required, -0000 refused, weekday must match);
+  `read_feed`/`load_feed` (DOCTYPE/ENTITY, non-RSS-2.0, no items refused whole; items
+  refused for no title, off-site link, bad time, time after the read; stored once per
+  (source, link); conflict recorded; overlap warning); rule me-types-1 `classify`; rule
+  me-dedup-1 (decision items of one bank and meeting date = one event, built only from items
+  known at the decision time); availability: current = our first read, replay = issuer's
+  stated time; `calendar_request`, `read_release_dates`, `load_release_dates` (a read is a
+  snapshot; date added/dropped inside the span both reads cover = schedule change recorded),
+  `scheduled_releases` (latest read known at the decision time, both claims use our read);
+  rule me-releases-1 (first vintage of each new period of CPIAUCSL, PAYEMS, GDPC1 = major
+  data release, stated date = ALFRED real-time start, availability = the vintage's own; a
+  period listed with '.' is not a release - October 2025 CPI, never published because of
+  the shutdown; a clipped first vintage is not derived; for MoSPI only a period NEW in a
+  later read is a release, released after the previous read - the first read's history is
+  not, so the owner's single read gives no India release yet); rule me-sebi-1 (SEBI
+  legal/circulars naming no company = sector_wide_regulation); declared events
+  (`check_declared`, `sync_declared_events`: recorded once, never silently changed, no
+  company types, no rbi.org.in URLs, current decisions only); `macro_events(conn,
+  decision_time, claim, start, end, groups, include_untyped)`; `release_dates_agree`
+  (cross-source check). Surprise against consensus is never assessed.
+- event_routes.py: ROUTE_KINDS read_across / sector_membership / measured_sensitivity (the
+  last two refused with reasons, and by the CHECK in me_routes); RELATIONS; `check_route`
+  (symbol must resolve to the ISIN on declared_on), `sync_routes`, `attribute(conn, event,
+  isin, decision_time)` -> routes or NoRoute (route recorded before the decision under both
+  claims, valid_from, same type, region or none; evidence_kind read_across,
+  direct_observation False, effect not_assessed), `events_for`.
+- Tables (migration 0019): me_reads, me_items, me_problems, me_calendar_reads,
+  me_calendar_dates, me_calendar_changes, me_declared, me_routes - append-only.
+- Commands: fetch-events (records the two owner files, reads the three feeds - TooSoon within
+  60 minutes is "skipped" - then the FRED calendar with the key unless --no-calendar; prints
+  the attribution "Sources: Board of Governors of the Federal Reserve System; European
+  Central Bank (this information is available free of charge at www.ecb.europa.eu); Bank of
+  Japan." and the FRED notice); show-macro-events (last 30 days by default, scheduled US
+  releases for 45 days, routes count).
+- Checks: tests 158; faults 101/101 (escaped at first and fixed: a '.' period taken as a
+  release; the type check never shown to fail); the rehearsal found the MoSPI first-read
+  history dated as releases - rule changed. Smoke on a database copy: 584 events, 85 of 85
+  first-release dates on FRED's calendar. Acceptance record stages/STAGE_10D_acceptance.yaml
+  (status ACCEPTED_MACRO_EVENTS_BASELINE; 8 not_claimed incl. BoJ statements missing from
+  the feed, ECB/BoJ schedules, undeclared RBI/budget/elections/conflicts/ratings, GDELT
+  topics, release times of day, direction and size of policy changes; 10 negative
+  assertions).
+- Not built (later): GDELT topic searches and a "geopolitical stress" coverage series;
+  ECB/BoJ/RBI meeting schedules; direction of rate changes from DFEDTARU/ECBDFR series.
 
 ## 12. Architecture v2.2.0 (ADR-007) - what changed and why
 
@@ -762,6 +858,11 @@ abstained" counts as success (49A); the assistant is not a licensed adviser.
   DPIIT terms unknown, not used) and CPI base 2012 (with provisional/final marks - not
   built yet).
 - FBIL (USD/INR reference rate, G-sec/T-bill benchmarks, MIBOR): terms to check.
+- Central banks and calendars (04-Oct-2026, Stage 10D): see section 11B for the Fed, ECB and
+  BoJ terms and feed shapes, FRED's release calendar and why PIB is not used. The ECB's
+  certificate chain needs Sectigo Public Server Authentication Root E46 (checked in Mozilla's
+  CCADB list). Samples: `data\handover\research\events_samples\` (one read of each feed)
+  and `fred_release_samples\` (owner's probe, 8 requests).
 - FPI/FII flows (Stage 10E): NSDL publishes daily FPI investment (since Dec-1999 per the
   BAC-Brindco/nsdl-fpi catalogue; fortnightly sector data since 2011), CDSL, SEBI FPI
   pages; NSE provisional FII/DII cash-market figures (hand download only - NSE terms).
@@ -806,35 +907,29 @@ non-standard closes per calendar).
 
 ## 14. Roadmap (40B order) and the next step in detail
 
-Done: steps 1-9 and 9a (Stage 7 = step 6; Stage 8/8B/8D = step 7; Stage 9 = step 8;
-Stages 10/10B = step 9; 10C/10C-2 = step 9a; 8C = intake tooling). Next: 10D = step 9b,
+Done: steps 1-9, 9a and 9b (Stage 7 = step 6; Stage 8/8B/8D = step 7; Stage 9 = step 8;
+Stages 10/10B = step 9; 10C/10C-2 = step 9a; 10D = step 9b; 8C = intake tooling). Next:
 10E = 9c, Stage 11 = step 10 (sentiment), Stage 7E = step 6a (price history, alongside,
 waiting on NSE or a vendor). Then step 11 Knowledge/Event Hub, 12 Real Feature Factory,
 13 Real Target Engine, 14 Equity Research Agent v0.1, 15 Prediction Ledger, 16 Shadow
 operation, 17 Outcome Resolver, 18 Error Attribution, 19 Calibration + Abstention,
 20 Decay/Drift, 21 Controlled Self-Learning, 22 Specialist agents, 23 API + Orchestrator.
 
-NEXT: Stage 10D = 40B step 9b, Macro and Geopolitical Events.
-- Read first in the architecture: 4A.0 (new event groups: monetary policy and rates;
-  fiscal, trade and regulation; sovereign and macro data; geopolitics and shocks;
-  index-provider and flow events), 4A rule 5 (an event without an issuer reaches a
-  security only by declared read-across, sector membership or measured sensitivity,
-  recorded), 3G, 4B, 4D, 4F.2, 4G, 5B, 5C, 40B step 9b and its acceptance text, 47/47A.
-- Candidate sources (terms first; ask the owner before any new host - it would need an
-  ADR-010 and allow-list change): GDELT (already allowed - DOC API themes/queries for
-  conflict, oil, sanctions, central banks; GDELT Events/GKG bulk files would be new
-  hosts), PIB press releases (reproduction allowed with acknowledgement - check its
-  RSS/feeds and robots), SEBI feed (already in), MoSPI release calendar (scheduled
-  releases as events, not proof of publication time), US/ECB/BoJ central-bank calendars
-  (official sites - terms to check). RBI stays out (ADR-006).
-- Design notes: event registry with group/type from 4A.0, no issuer -> read-across rules
-  declared and recorded; availability from proven first-seen/retrieval; extraction
-  confidence separate from investment confidence; never read article bodies from
-  commercial sites.
-- Then 10E (FPI/FII and DII daily flows - NSDL terms first), then Stage 11 sentiment
-  (Alpha Vantage after the probe; exclude TradingView; 4B rules).
-- Also owed: CPI food inflation with a narrower filter; CPI base 2012; WPI if DPIIT
-  terms allow; India VIX/Nifty after NSE replies; calendars before 2026-12-31.
+Stage 10D (step 9b) is installed and verified (section 11B); commit pending (section 0.1).
+
+NEXT: Stage 10E = 40B step 9c, Aggregate Investor Flows.
+- Read first in the architecture: 3C (ownership and flows; rule 1 - stamped with publication
+  time, never the trade date), 3G (investor flows row), 4G, 5B, 5C, 40B step 9c and its
+  done-when text ("Daily FPI/FII and DII flows are stamped with their publication time,
+  never the trade date"), 47/47A.
+- Candidate sources (terms first; any new host needs the owner's approval and an ADR-011):
+  NSDL FPI daily investment data (the BAC-Brindco/nsdl-fpi catalogue describes it - NSDL's
+  terms decide; check automated access and reuse first), CDSL, SEBI's FPI pages; NSE's
+  provisional FII/DII cash-market figures are hand downloads only (NSE terms).
+- Then Stage 11 = step 10 sentiment (Alpha Vantage after the probe; exclude TradingView; 4B).
+- Also owed: CPI food inflation with a narrower filter; CPI base 2012; WPI if DPIIT terms
+  allow; India VIX/Nifty after NSE replies; calendars before 2026-12-31; GDELT topic searches
+  for geopolitics after the first successful fetch-news.
 
 ## 15. NSE real-data findings (the code depends on these)
 
@@ -885,24 +980,28 @@ ONGC, PSB, INFY, TCS, IDEA.
 ## 17. Files kept for the next chat (`data\handover\`, git-ignored, on disk)
 
 - `HANDOFF_new.md` - this file (copied to docs/HANDOFF.md in the 10C-2 commit).
-- `stage10c2\files\` (10 tested new files), `stage10c2\patch_stage10c2.py` (already run
-  by the owner - a second run STOPs), `stage10c2\patch_stage10c2_record.py` (to run,
-  section 0.1).
+- `stage10d\files\` (9 tested new files), `stage10d\patch_stage10d.py` (already run by
+  the owner - a second run STOPs), `stage10d\patch_stage10d_record.py` (to run, section
+  0.1), `stage10d\work\repo\` (the tested copy of the whole repository), fault and smoke
+  outputs (`mutate_stage10*_final.txt`, `smoke_10d_output.txt`), `make_handoff.py`.
+- `stage10c2\` - Stage 10C-2 files, patch_stage10c2.py and patch_stage10c2_record.py (all done).
 - `stage10c\` - Stage 10C files, patch_stage10c.py and patch_stage10c_record.py (all done).
 - `install_v220.py`, `arch220_files\` - v2.2.0 install (done).
 - `nse_request\` - 1_form_answers.txt, 2_email_to_nseri.txt (section 13.6).
 - `tools\` - build_v220.py, audit_v220.py, md2html.py, pdf_text.py, escape_tests.py;
-  mutate_stage10.py, mutate_stage10b.py, mutate_stage10c.py, mutate_stage10c2.py
-  (usage: `<venv python> mutate_stageX.py <scratch repo root>`); smoke_news.py,
-  smoke_sebi.py, smoke_macro.py, smoke_10c2.py (real-data checks on a database copy:
-  `<venv python> smoke_X.py <scratch repo root>`); analyse_gdelt.py, analyse_sebi.py;
-  fetch_gdelt_samples.py (reference only); av_probe.py; fred_probe.py; mospi_probe.py
-  (research probes, owner-approved); make_calendars.py, make_calendar_yaml.py,
+  mutate_stage10.py, mutate_stage10b.py, mutate_stage10c.py, mutate_stage10c2.py,
+  mutate_stage10d.py (usage: `<venv python> mutate_stageX.py <scratch repo root>`);
+  smoke_news.py, smoke_sebi.py, smoke_macro.py, smoke_10c2.py, smoke_10d.py (real-data
+  checks on a database copy: `<venv python> smoke_X.py <scratch repo root>`);
+  make_patch.py (patch generator, section 5); analyse_gdelt.py, analyse_sebi.py;
+  fetch_gdelt_samples.py (reference only); av_probe.py; fred_probe.py; mospi_probe.py;
+  events_probe.py, ecb_probe.py, fred_release_probe.py (research probes, owner-approved); make_calendars.py, make_calendar_yaml.py,
   check_calendars.py (calendar generation and checks - need the xcal venv).
 - `research\` - gdelt_samples, sebi_samples, fred_samples, mospi_samples,
-  mospi_live_2026-10-04, calendars, av_terms.txt, github_survey_2026-10-03.md.
+  mospi_live_2026-10-04, calendars, events_samples, fred_release_samples, av_terms.txt,
+  github_survey_2026-10-03.md.
 - Outside the repo: `C:\Users\nalin\AppData\Local\Temp\xcal` (exchange_calendars venv,
-  143 MB; delete after the 10C-2 commit unless the owner wants it kept).
+  143 MB; KEPT until the calendars are extended before 2026-12-31 - owner decision).
 
 ## 18. How to start the new chat
 
@@ -912,9 +1011,9 @@ Paste this to the new chat:
 > C:\Users\nalin\Projects\ai-equity-agent. Please read docs/HANDOFF.md fully first (if
 > data\handover\HANDOFF_new.md is newer, read that one), then the frozen architecture
 > docs/Master_Architecture_v2_2_0_FROZEN.md sections named there. Verify the current state
-> (git log, tests 740, database version 18, CI). If the Stage 10C-2 commit is not made
-> yet, take me through section 0.1 of the handoff and verify; then continue with Stage 10D
-> (architecture 40B step 9b, Macro and Geopolitical Events) using the same step-by-step
+> (git log, tests 898, database version 19, CI). If the Stage 10D commit is not made
+> yet, take me through section 0.1 of the handoff and verify; then continue with Stage 10E
+> (architecture 40B step 9c, Aggregate Investor Flows) using the same step-by-step
 > method: research real data first, build and test in a scratch copy, give me paste
 > blocks and commands, and verify after I reply "done". Tell me in advance whenever you
 > need an API key and from which source - free options first.

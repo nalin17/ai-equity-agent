@@ -17,5 +17,8 @@ Data notices:
 - News metadata: The GDELT Project, https://www.gdeltproject.org/ (ADR-005).
 - India macro statistics: Source - Ministry of Statistics and Programme Implementation (MoSPI),
   National Statistics Office, eSankhyiki (ADR-009).
+- Central-bank events: Board of Governors of the Federal Reserve System; European Central Bank
+  (information available free of charge at www.ecb.europa.eu); Bank of Japan. Titles and release
+  times only, stored privately for the owner's own research (ADR-010).
 - Market calendars generated with exchange_calendars (Apache License 2.0; licence text in
   docs/third_party/exchange_calendars-LICENSE.txt).

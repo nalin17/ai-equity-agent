@@ -1,0 +1,45 @@
+# Events declared by the owner (Stage 10D; architecture 4A.0, 4A rule 5; ADR-010). HUMAN-OWNED.
+#
+# For events that no official feed brings in: Union Budget, RBI policy decisions, election results,
+# OPEC+ decisions, sovereign rating actions, wars and ceasefires, sanctions, monsoon deviations.
+# fetch-events and show-macro-events record each new entry once. A recorded entry is never silently
+# changed: to correct one, add a new entry with a new event_key and say what it corrects in its title.
+# An event declared here is known to the system from the moment it is recorded - for current
+# decisions only; it never counts as known earlier, so past decisions are never replayed with it.
+# No event here is linked to any company unless a route is declared in config/event_routes.yaml.
+#
+# Fields (all required unless marked optional):
+#   event_key     lower-case letters, digits, - and _ (3 to 61 characters), unique
+#   event_type    one of the registered types below
+#   region        India, United States, Euro area, Japan, China, United Kingdom, Middle East, Russia,
+#                 Other Asia, Other Europe or World
+#   occurred_on   the day it happened, "YYYY-MM-DD"
+#   occurred_at   optional: the time with its zone, e.g. "2026-12-04 10:00:00+05:30"
+#   institution   optional: who acted, e.g. Reserve Bank of India, OPEC+, Ministry of Finance
+#   title         your own words, one line (5 to 160 characters) - never copied text
+#   source        the public source you read it in, e.g. "Press Information Bureau release"
+#   source_url    optional: one https address - never an rbi.org.in address (RBI's terms, ADR-006)
+#   declared_on   the day you add the entry, "YYYY-MM-DD"
+#
+# Registered types (4A.0):
+#   monetary policy and rates:   central_bank_decision, policy_rate_change, liquidity_measure,
+#                                sovereign_bond_auction_stress
+#   fiscal, trade and regulation: union_budget, tax_or_gst_change, tariff_or_trade_action,
+#                                export_or_import_restriction, production_linked_incentive,
+#                                sector_wide_regulation
+#   sovereign and macro data:    sovereign_rating_action, major_data_release
+#   geopolitics and shocks:      armed_conflict_onset, armed_conflict_escalation, ceasefire, sanctions,
+#                                opec_decision, supply_disruption, natural_disaster, monsoon_deviation,
+#                                pandemic_measures, election_result
+#   index provider and flows:    index_provider_country_change, foreign_flow_episode
+#
+# Example (not active - it only becomes an entry if the # signs are removed and the dates are real):
+#   - event_key: union-budget-2027-28
+#     event_type: union_budget
+#     region: India
+#     occurred_on: "2027-02-01"
+#     institution: Ministry of Finance
+#     title: Union Budget 2027-28 presented in Parliament
+#     source: Press Information Bureau release
+#     declared_on: "2027-02-01"
+events: []

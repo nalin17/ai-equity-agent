@@ -1,0 +1,38 @@
+# Routes from macro events to companies (Stage 10D; architecture 4A rules 4 and 5, 3G rule 4; ADR-010).
+# HUMAN-OWNED.
+#
+# A macro, policy or geopolitical event has no issuer. It reaches a company ONLY through a route
+# declared here and recorded by fetch-events or show-macro-events - never through a name in a headline
+# or a guess. A route says how an event reaches a company; it never says what the event will do to the
+# price - that is measured later, never assumed. Evidence that travels a route is tagged read-across,
+# never a direct observation about the company. A recorded route is never silently changed: declare a
+# new route_key instead. A route counts only for decisions made after it was recorded.
+#
+# Only kind read_across can be used now. sector_membership needs a point-in-time sector classification
+# (9B) and measured_sensitivity needs a measured company sensitivity (9C) - both are refused until
+# those exist.
+#
+# Fields (all required unless marked optional):
+#   route_key    lower-case letters, digits, - and _ (3 to 61 characters), unique
+#   kind         read_across
+#   event_type   a registered macro event type (see config/declared_events.yaml)
+#   region       optional: only events from this region (otherwise any region)
+#   symbol       the company's NSE symbol
+#   isin         the company's ISIN - must be what the symbol means on declared_on
+#   relation     input_cost, output_price, export_revenue, import_cost, funding_cost, demand,
+#                regulated_entity, supplier, customer or peer
+#   rationale    one line (20 to 300 characters): why this event reaches this company
+#   valid_from   "YYYY-MM-DD" - the route applies from this day
+#   declared_on  "YYYY-MM-DD" - the day you add the route
+#
+# Example (not active):
+#   - route_key: opec-to-example-refiner
+#     kind: read_across
+#     event_type: opec_decision
+#     symbol: EXAMPLE
+#     isin: INE000000000
+#     relation: input_cost
+#     rationale: crude oil is the main input cost of this refiner
+#     valid_from: "2026-10-05"
+#     declared_on: "2026-10-05"
+routes: []

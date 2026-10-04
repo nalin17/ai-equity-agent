@@ -26,6 +26,11 @@ Commands:
   fetch-india [--series A,B]  fetch India's CPI, IIP and GDP series in config/india_macro_series.yaml
                             from MoSPI's API (no key needed) - ADR-009
   show-india [SERIES]       India's macro statistics as known now, or one series' recent values
+  fetch-events [--no-calendar]  read the Federal Reserve, ECB and Bank of Japan feeds once, and FRED's
+                            release calendar with your own key; record config/declared_events.yaml and
+                            config/event_routes.yaml - ADR-010
+  show-macro-events [FROM] [TO] [--all]  macro and geopolitical events as known now (dates YYYY-MM-DD;
+                            default last 30 days) and the scheduled US releases
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -39,7 +44,8 @@ retrieval time: it is the moment the data verifiably entered this system
 
 News is the one exception: fetch-news asks GDELT, whose terms allow automated use
 (ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), fetch-macro asks FRED's API
-with your own key (ADR-008), and fetch-india asks MoSPI's API (ADR-009) - nothing else.
+with your own key (ADR-008), fetch-india asks MoSPI's API (ADR-009), and fetch-events reads
+three central banks' feeds and FRED's release calendar (ADR-010) - nothing else.
 Article links are never opened.
 """
 import sys
@@ -66,6 +72,10 @@ from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_co
 from ingestion.news_fetch import FRED_INTERVAL, FetchError, FredClient, RateLimited, fetch_macro_series  # noqa: E402
 from ingestion.news_fetch import fred_key  # noqa: E402
 from ingestion.news_fetch import MOSPI_INTERVAL, MospiClient, fetch_india_request  # noqa: E402
+from ingestion.news_fetch import CENTRAL_BANK_FEEDS, TooSoon, fetch_central_bank, fetch_release_calendar  # noqa: E402
+from ingestion.macro_events import ATTRIBUTION as EVENTS_ATTRIBUTION, CALENDAR_RELEASES, macro_events  # noqa: E402
+from ingestion.macro_events import scheduled_releases, sync_declared_events  # noqa: E402
+from ingestion.event_routes import sync_routes  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
@@ -604,6 +614,109 @@ def show_india(args):
     conn.close()
 
 
+def record_declarations(conn, log):
+    """Record new entries of config/declared_events.yaml and config/event_routes.yaml. Returns the number of
+    files refused (a refused file records nothing)."""
+    refused = 0
+    for label, sync in (("Declared events", sync_declared_events), ("Event routes", sync_routes)):
+        try:
+            result = sync(conn)
+        except Exception as e:  # nothing from that file is recorded
+            refused += 1
+            log.error("%s: NOT RECORDED - %s: %s", label, type(e).__name__, e)
+            continue
+        if result["recorded"]:
+            log.info("%s newly recorded: %s", label, ", ".join(result["recorded"]))
+        if result["not_in_file"]:
+            log.warning("%s recorded earlier but no longer in the file (they stay recorded): %s", label,
+                        ", ".join(result["not_in_file"]))
+    return refused
+
+
+def fetch_events(args):
+    if args not in ([], ["--no-calendar"]):
+        raise SystemExit("Usage: python manage.py fetch-events [--no-calendar]")
+    log = setup_logging()
+    conn = open_db()
+    failed = record_declarations(conn, log)
+    for source_id in CENTRAL_BANK_FEEDS:
+        try:
+            result = fetch_central_bank(conn, source_id, fetched_dir())
+        except TooSoon as e:
+            log.info("%s: skipped - %s", source_id, e)
+            continue
+        except Exception as e:  # report and carry on with the next feed; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT READ - %s: %s", source_id, type(e).__name__, e)
+            continue
+        problems, warning = result.pop("problems", []), result.pop("warning", None)
+        log.info("%s: %s", source_id, result)
+        for problem in problems:
+            print(f"     {problem}")
+        if warning:
+            log.warning("%s: %s", source_id, warning)
+    if not args:
+        try:
+            client = FredClient(fred_key())
+        except FetchError as e:
+            failed += 1
+            log.error("FRED release calendar: NOT FETCHED - %s", e)
+        else:
+            for release_id in CALENDAR_RELEASES:
+                try:
+                    result = fetch_release_calendar(conn, client, release_id, fetched_dir())
+                except RateLimited as e:
+                    failed += 1
+                    log.error("FRED release %s: NOT FETCHED - %s", release_id, e)
+                    break
+                except Exception as e:  # nothing partial is stored
+                    failed += 1
+                    log.error("FRED release %s: NOT FETCHED - %s: %s", release_id, type(e).__name__, e)
+                    continue
+                problems, warning = result.pop("problems", []), result.pop("warning", None)
+                log.info("FRED release %s: %s", release_id, result)
+                if warning:
+                    log.warning("FRED release %s: %s", release_id, warning)
+            log.info("FRED requests: %s. %s", client.requests, FRED_NOTICE)
+    log.info(EVENTS_ATTRIBUTION)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} part(s) not read or recorded - see the messages above")
+
+
+def show_macro_events(args):
+    usage = "Usage: python manage.py show-macro-events [FROM] [TO] [--all]"
+    everything = "--all" in args
+    args = [a for a in args if a != "--all"]
+    if len(args) > 2 or any(a.startswith("--") for a in args):
+        raise SystemExit(usage)
+    now = datetime.now(timezone.utc)
+    start = strict_iso_date(args[0]).isoformat() if args else (now - timedelta(days=30)).date().isoformat()
+    end = strict_iso_date(args[1]).isoformat() if len(args) > 1 else "9999-12-31"
+    log = setup_logging()
+    conn = open_db()
+    record_declarations(conn, log)
+    when = lambda t: parse_timestamp(t).astimezone(IST).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    sys.stdout.reconfigure(errors="replace")
+    found = macro_events(conn, now, start=start, end=end, include_untyped=everything)
+    print(f"Macro and geopolitical events that happened {start} to {end}, as known now (current decision): {len(found)}."
+          " 'known' is when this system first had each one, India time. None is linked to any company unless a"
+          " route is declared in config/event_routes.yaml.")
+    for e in found:
+        types = ", ".join(e["event_types"]) or e["kind"]
+        print(f"  {e['happened_on']}  {e['region']:<14} {types:<44} known {when(e['available_at'])}  ({e['source_id']})")
+        print(f"              {e['title'][:110]}")
+    today = now.date()
+    upcoming = scheduled_releases(conn, now, start=today.isoformat(), end=(today + timedelta(days=45)).isoformat())
+    print(f"Scheduled US releases in the next 45 days (FRED's calendar; dates only, no time of day): {len(upcoming)}")
+    for r in upcoming:
+        print(f"  {r['date']}  {r['release']}")
+    routes = conn.execute("SELECT COUNT(*) FROM me_routes").fetchone()[0]
+    print(f"  Routes recorded: {routes}. {EVENTS_ATTRIBUTION}")
+    print(f"  {FRED_NOTICE}")
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -708,6 +821,9 @@ def report(args):
           f" {one('SELECT COUNT(*) FROM mc_vintages')} vintages from {one('SELECT COUNT(*) FROM mc_responses')} answers")
     print(f"India macro (MoSPI):       {one('SELECT COUNT(*) FROM mo_series')} series,"
           f" {one('SELECT COUNT(*) FROM mo_values')} values from {one('SELECT COUNT(*) FROM mo_reads')} reads")
+    print(f"Macro events (central banks): {one('SELECT COUNT(*) FROM me_items')} feed items from"
+          f" {one('SELECT COUNT(*) FROM me_reads')} reads; declared {one('SELECT COUNT(*) FROM me_declared')};"
+          f" routes {one('SELECT COUNT(*) FROM me_routes')}; calendar reads {one('SELECT COUNT(*) FROM me_calendar_reads')}")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -744,6 +860,8 @@ COMMANDS = {
     "show-macro": show_macro,
     "fetch-india": fetch_india,
     "show-india": show_india,
+    "fetch-events": fetch_events,
+    "show-macro-events": show_macro_events,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

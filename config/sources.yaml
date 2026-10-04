@@ -228,3 +228,67 @@ sources:
     reliability_rating: B
     authentication_method: none (a file in the repository)
     schema_description: per calendar - id, name, time zone, coverage, closed weekdays, weekend sessions; series_calendars maps macro series to the calendar that decides their trading days
+
+  - source_id: fed_monetary_feed
+    provider: Board of Governors of the Federal Reserve System
+    source_class: regulator_official
+    data_type: Federal Reserve monetary-policy press releases - FOMC statements, minutes, projections; title, link and release time
+    endpoint: https://www.federalreserve.gov/feeds/press_monetary.xml (RSS 2.0; nothing else on the site is read)
+    authority: primary
+    license: Federal Reserve Board website - information is in the public domain unless otherwise indicated and may be copied without permission; the Board is cited as the source; seals and logos never used (ADR-010)
+    update_frequency: as the Board publishes; the feed keeps about its latest 15 items (about six months)
+    historical_coverage: from this system's first read; items in the first read reach back about six months
+    latency: none - FOMC statements are released at 2 pm New York time (18:00 or 19:00 UTC)
+    revision_policy: corrections arrive as new releases; nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public RSS; read at most once an hour; certificates checked)
+    schema_description: one item per release - title, link, guid, description (same as the title), category, pubDate with time and zone (GMT)
+
+  - source_id: ecb_press_feed
+    provider: European Central Bank
+    source_class: regulator_official
+    data_type: ECB press releases, monetary policy decisions, speeches and interviews; title, link and release time
+    endpoint: https://www.ecb.europa.eu/rss/press.html (RSS 2.0; nothing else on the site is read)
+    authority: primary
+    license: ECB website copyright notice - free use of information obtained directly from the site, reproduced accurately with the ECB cited as the source; modification stated explicitly; robots.txt crawl-delay 5 seconds respected (ADR-010)
+    update_frequency: several items a day; the feed keeps its latest 15 items (about ten days)
+    historical_coverage: from this system's first read (about ten days visible at a time)
+    latency: none - monetary policy decisions are released at 14:15 Frankfurt time
+    revision_policy: corrections arrive as new releases; nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public RSS; read at most once an hour; certificates checked, with the public root Sectigo Public Server Authentication Root E46 added for this host only - ADR-010)
+    schema_description: one item per release - title, link (document code such as ecb.mp for a monetary policy decision), guid, pubDate with time and zone (+0100 or +0200)
+
+  - source_id: boj_whatsnew_feed
+    provider: Bank of Japan
+    source_class: regulator_official
+    data_type: Bank of Japan what's-new feed in English - statements on monetary policy, minutes, operations and statistics; title, link and release time
+    endpoint: https://www.boj.or.jp/en/rss/whatsnew.xml (RSS 2.0; nothing else on the site is read)
+    authority: primary
+    license: Bank of Japan site notice - content may be copied or reproduced with the Bank of Japan credited as the source, except for commercial purposes and images; this use is personal and non-commercial (ADR-010)
+    update_frequency: several items a day; the feed keeps about its latest 47 items (about four weeks)
+    historical_coverage: from this system's first read (about four weeks visible at a time)
+    latency: none for the items it carries; on 18-Sep-2026 the main statement on monetary policy was not in the English feed, only its reference document
+    revision_policy: corrections arrive as new releases; nothing is edited
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public RSS; read at most once an hour; certificates checked)
+    schema_description: one item per release - title, description (empty), link (http), guid, pubDate with time and zone (+0900)
+
+  - source_id: fred_release_calendar
+    provider: Federal Reserve Bank of St. Louis (FRED release calendar)
+    source_class: official_statistics
+    data_type: scheduled and past release dates of declared US releases - Consumer Price Index, Employment Situation, Gross Domestic Product
+    endpoint: https://api.stlouisfed.org/fred/release/dates (JSON; release ids 10, 50 and 53 only)
+    authority: secondary
+    license: FRED API terms as for fred_alfred - personal use, stored privately and never redistributed; the owner's own key, never stored; notice 'This product uses the FRED API but is not endorsed or certified by the Federal Reserve Bank of St. Louis' (ADR-008, ADR-010)
+    update_frequency: daily read; publishers change dates rarely (the US shutdown of late 2025 moved several)
+    historical_coverage: the latest 40 dates per release, about two to three months of them in the future
+    latency: dates are known months ahead; no time of day is given
+    revision_policy: each read is a snapshot; a date added or dropped against the previous read is recorded as a schedule change; nothing is edited
+    timestamp_semantics: effective_date
+    reliability_rating: A
+    authentication_method: API key of the owner, read from the environment variable FRED_API_KEY by the network module only; at most one request a second
+    schema_description: realtime_start, realtime_end, order_by, sort_order, count, offset, limit and release_dates - a list of release_id and date (YYYY-MM-DD)
