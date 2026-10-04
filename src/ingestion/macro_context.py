@@ -25,6 +25,11 @@ Rules, each found on FRED's real answers (03-Oct-2026):
     clipped (the true start is that day or earlier) and never taken for a new vintage.
   - A date FRED lists without a value ('.') - US Labor Day for Treasury yields - is stored as
     structurally absent, never filled from another day (4C, 5C rule 4).
+  - Where config/market_calendars.yaml declares a market's calendar for a series (Stage 10C-2), the
+    calendar decides: a value on a day that market was closed is not a session close and is never
+    used - FRED shows the Nasdaq on Good Friday 19-Apr-2019 and the Nikkei on 1-Oct-2020 (the Tokyo
+    exchange's outage), each the previous close repeated - and no value on a day it traded is a
+    conflict between the sources. The stored vintage is kept as FRED gave it.
   - Availability (5B, 5C). Current decisions: from our own retrieval. Historical replay: from
     FRED's own statement of its last update of the series, read right after the observations -
     every value in that answer was in FRED by then. ALFRED's vintage date is kept but is not proof:
@@ -47,6 +52,7 @@ import yaml
 
 from core.config import PROJECT_ROOT
 from core.database import now_utc, run_in_transaction
+from core.calendars import load_calendars
 from core.dates import strict_iso_date
 from core.sessions import ZONES, local_to_utc
 from data_quality.missing_data import MissingClass
@@ -412,9 +418,37 @@ def load_fred_answers(conn, series_id, obs_path, obs_retrieved_at, meta_path, me
 
 # ---- what was known at a decision time (5B, 5C) -----------------------------------------------
 
+def _calendar_for(info):
+    """The market calendar that decides this series' trading days (Stage 10C-2), or None."""
+    calendars, mapping = load_calendars()
+    cid = mapping.get(info["series_id"])
+    if cid is None:
+        return None
+    cal = calendars[cid]
+    if info["kind"] != "market_close" or info["time_zone"] != cal.time_zone:
+        raise MacroSeriesError(f"{info['series_id']} is mapped to calendar {cid}, but it is not a market close in"
+                               f" {cal.time_zone}")
+    return cal
+
+
+def _by_calendar(row, cal):
+    """A vintage judged by its market's calendar (5C rule 4): a value on a day the market was closed is not a
+    session close and is never used; no value on a day the market traded is a conflict between the sources."""
+    if cal is None or not cal.covers(row["date"]):
+        return row
+    if not cal.is_session(row["date"]) and row["value"] is not None:
+        return {**row, "value": None, "missing_class": MissingClass.STRUCTURALLY_ABSENT,
+                "reason": f"{cal.calendar_id} was closed that day; FRED's value {row['value_text']} is not a session close"}
+    if cal.is_session(row["date"]) and row["value"] is None:
+        return {**row, "missing_class": MissingClass.SOURCE_CONFLICT,
+                "reason": f"{cal.calendar_id} traded that day but FRED lists no value"}
+    return row
+
+
 def _known_at(conn, series_id, decision_time, claim):
-    """{date: the latest vintage of that date known at decision_time under the claim}."""
-    series_info(conn, series_id)
+    """{date: the latest vintage of that date known at decision_time under the claim}, judged by the series'
+    market calendar where one is declared."""
+    cal = _calendar_for(series_info(conn, series_id))
     decision = parse_timestamp(decision_time)
     known = {}
     for row in conn.execute(
@@ -432,7 +466,7 @@ def _known_at(conn, series_id, decision_time, claim):
                       "missing_class": MissingClass(missing) if missing else None, "value_text": text,
                       "realtime_start": start, "start_clipped": bool(clipped), "set_at": set_at,
                       "available_at": basis}
-    return known
+    return {day: _by_calendar(row, cal) for day, row in known.items()}
 
 
 def observations(conn, series_id, decision_time, claim=PitClaim.CURRENT_DECISION, start=None, end=None):
@@ -468,10 +502,18 @@ def value_on(conn, series_id, day, decision_time, claim=PitClaim.CURRENT_DECISIO
     if key in known:
         found = dict(known[key])
         if found["value"] is None:
-            found["reason"] = "FRED lists this date without a value: the market or publisher had none that day"
+            found.setdefault("reason", "FRED lists this date without a value: the market or publisher had none that day")
         return found
     dates = sorted(known)
-    if info["frequency"] == "daily" and wanted.weekday() >= 5:
+    cal = _calendar_for(info)
+    if cal is not None and cal.covers(wanted):
+        if not cal.is_session(wanted):
+            cls, reason = MissingClass.STRUCTURALLY_ABSENT, f"{cal.calendar_id} was closed that day"
+        elif not dates or key > dates[-1]:
+            cls, reason = MissingClass.NOT_YET_RELEASED, "not published as far as was known at the decision time"
+        else:
+            cls, reason = MissingClass.EXTRACTION_FAILURE, f"{cal.calendar_id} traded but no row is stored for this date"
+    elif info["frequency"] == "daily" and wanted.weekday() >= 5:
         cls, reason = MissingClass.STRUCTURALLY_ABSENT, "a weekend: this series has values on business days only"
     elif not dates or key > dates[-1]:
         cls, reason = MissingClass.NOT_YET_RELEASED, "not published as far as was known at the decision time"

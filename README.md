@@ -15,3 +15,7 @@ Data notices:
   Bank of St. Louis. Series owned by others keep their owners' terms; data from FRED is stored
   privately for the owner's own research and never redistributed (docs/decisions/ADR-008).
 - News metadata: The GDELT Project, https://www.gdeltproject.org/ (ADR-005).
+- India macro statistics: Source - Ministry of Statistics and Programme Implementation (MoSPI),
+  National Statistics Office, eSankhyiki (ADR-009).
+- Market calendars generated with exchange_calendars (Apache License 2.0; licence text in
+  docs/third_party/exchange_calendars-LICENSE.txt).

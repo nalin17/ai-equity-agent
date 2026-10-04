@@ -1,12 +1,14 @@
-"""Fetching news from GDELT's DOC 2.0 API (ADR-005), SEBI's RSS feed (ADR-006) and macro series
-from FRED's API (ADR-008).
+"""Fetching news from GDELT's DOC 2.0 API (ADR-005), SEBI's RSS feed (ADR-006), macro series
+from FRED's API (ADR-008) and India's macro statistics from MoSPI's API (ADR-009).
 
 This is the ONLY module in the project allowed to open a network connection, and it contacts
 only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, and on
-FRED's only the addresses in FRED_PATHS. NSE data is never fetched: NSE's terms forbid it
+FRED's and MoSPI's only the addresses in FRED_PATHS and MOSPI_PATHS. NSE data is never fetched: NSE's terms forbid it
 (ADR-004). GDELT's terms allow any use, with citation, and GDELT asks callers to space their
 requests. SEBI's feed asks readers to wait 60 minutes between reads; a read sooner is refused
-before anything is sent. FRED allows 120 requests a minute with the owner's own key.
+before anything is sent. FRED allows 120 requests a minute with the owner's own key. MoSPI
+needs no key; its server only accepts the old TLS option 'legacy renegotiation', which is
+switched on for that one host - certificates and host names are always checked, for every host.
 
 The FRED key (4G rule 5) is read only here, from the environment variable FRED_API_KEY on the
 owner's computer. It goes into the address of each FRED request and nowhere else: never into a
@@ -30,6 +32,7 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -39,18 +42,24 @@ from pathlib import Path
 
 from data_quality.trust_chain import NoDataError
 from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response, news_names, read_response
+from ingestion.india_macro import API_PATHS as MOSPI_DATASET_PATHS, MAX_PAGES, MospiResponseError, load_mospi_pages
+from ingestion.india_macro import page_params, read_page
 from ingestion.macro_context import load_fred_answers, read_observations, read_series_meta, request_for, series_info
 from ingestion.sebi_releases import load_feed, read_feed
 from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
-ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org"})
+ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in"})
 SEBI_FEED = "https://www.sebi.gov.in/sebirss.xml"   # the only address on SEBI's site ever asked for
 FRED_API = "https://api.stlouisfed.org/fred/"
 FRED_PATHS = frozenset({"/fred/series/observations", "/fred/series"})   # the only addresses on FRED's site
 FRED_KEY_VARIABLE = "FRED_API_KEY"
 FRED_KEY_SHAPE = re.compile(r"^[a-z0-9]{32}$")   # FRED: a 32-character lower-case alphanumeric string
 FRED_INTERVAL = 1.0                              # seconds between FRED requests (FRED allows 120 a minute)
+MOSPI_HOST = "api.mospi.gov.in"
+MOSPI_API = "https://api.mospi.gov.in"
+MOSPI_PATHS = frozenset(MOSPI_DATASET_PATHS.values())   # the only addresses on MoSPI's site (ADR-009)
+MOSPI_INTERVAL = 3.0                             # seconds between MoSPI requests (no published limit)
 SEBI_WAIT = timedelta(minutes=60)                   # the feed's own time-to-live (ttl 60)
 API = "https://api.gdeltproject.org/api/v2/doc/doc"
 USER_AGENT = "ai-equity-agent/1.0 (personal research, non-commercial)"
@@ -92,12 +101,25 @@ def _check_host(url):
     if host == "api.stlouisfed.org" and (parts.path not in FRED_PATHS or parts.fragment or parts.netloc != host):
         raise FetchError(f"{_shown(url)!r} is not an allowed address: only FRED's series and observations are"
                          " read (ADR-008)")
+    if host == MOSPI_HOST and (parts.path not in MOSPI_PATHS or parts.fragment or parts.netloc != host):
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only MoSPI's CPI, IIP and national accounts"
+                         " data are read (ADR-009)")
+
+
+def tls_context(host):
+    """Certificates and host names are always checked. MoSPI's server accepts only legacy renegotiation, so
+    that one option is switched on for that one host (ADR-009)."""
+    context = ssl.create_default_context()
+    if host == MOSPI_HOST:
+        context.options |= getattr(ssl, "OP_LEGACY_SERVER_CONNECT", 0x4)
+    return context
 
 
 def http_get(url):
     """(HTTP status, body). The only network call in the project."""
     _check_host(url)
-    opener = urllib.request.build_opener(_NoRedirect)
+    host = urllib.parse.urlsplit(url).hostname
+    opener = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=tls_context(host)))
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         with opener.open(request, timeout=TIMEOUT) as response:
@@ -325,3 +347,68 @@ def fetch_macro_series(conn, client, series_id, out_dir, raw_dir=None, full=Fals
         return load_fred_answers(conn, series_id, obs_path, obs_at, meta_path, meta_at, asked, raw_dir=raw_dir)
     except ArtifactError:
         return {"rows": len(rows), "note": "identical to an answer already stored - nothing new", "problems": []}
+
+
+# ---- MoSPI (ADR-009) -----------------------------------------------------------------------
+
+def mospi_url(dataset, params):
+    url = MOSPI_API + MOSPI_DATASET_PATHS[dataset] + "?" + urllib.parse.urlencode(params)
+    _check_host(url)
+    return url
+
+
+class MospiClient:
+    """Asks MoSPI's API, no closer together than MOSPI_INTERVAL; stops asking after HTTP 429."""
+
+    def __init__(self, get=http_get, sleep=time.sleep, clock=time.monotonic,
+                 now=lambda: datetime.now(timezone.utc)):
+        self.get, self.sleep, self.clock, self.now = get, sleep, clock, now
+        self.last = None
+        self.requests = 0
+        self.gave_up = False
+
+    def fetch(self, dataset, params):
+        """(body, retrieved_at) of one answer with HTTP 200, or FetchError."""
+        if self.gave_up:
+            raise RateLimited("MoSPI asked to slow down earlier in this run, so it was not asked again - nothing"
+                              " stored; try again later")
+        if self.last is not None and self.clock() - self.last < MOSPI_INTERVAL:
+            self.sleep(MOSPI_INTERVAL - (self.clock() - self.last))
+        self.last = self.clock()
+        self.requests += 1
+        status, body = self.get(mospi_url(dataset, params))
+        retrieved = self.now()
+        if status == 429:
+            self.gave_up = True
+            raise RateLimited("MoSPI asked to slow down (HTTP 429) - nothing stored, and MoSPI is not asked again in"
+                              " this run; try again later")
+        if status != 200:
+            raise FetchError(f"MoSPI answered HTTP {status} - nothing stored")
+        return body, retrieved
+
+
+def fetch_india_request(conn, client, dataset, request, out_dir, raw_dir=None):
+    """Fetch every page of one MoSPI request and store what is new (ADR-009). Returns the load report.
+    Every page is checked before anything is written."""
+    bodies = []
+    while True:
+        page = len(bodies) + 1
+        body, retrieved = client.fetch(dataset, page_params(request, page))
+        _, meta = read_page(body, page)
+        if meta["totalPages"] > MAX_PAGES:
+            raise MospiResponseError(f"MoSPI states {meta['totalPages']} pages, more than the {MAX_PAGES} allowed - refused")
+        bodies.append((body, retrieved))
+        if page >= meta["totalPages"]:
+            break
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()[:8]
+    pages = []
+    for number, (body, retrieved) in enumerate(bodies, 1):
+        path = _free_path(out_dir / f"mospi_{dataset}_{key}_{bodies[0][1]:%Y%m%d%H%M%S}_p{number}.json", body)
+        path.write_bytes(body)
+        pages.append((path, retrieved))
+    try:
+        return load_mospi_pages(conn, dataset, request, pages, raw_dir=raw_dir)
+    except ArtifactError:
+        return {"pages": len(pages), "note": "identical to answers already stored - nothing new", "problems": []}

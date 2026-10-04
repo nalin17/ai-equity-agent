@@ -196,3 +196,35 @@ sources:
     reliability_rating: A
     authentication_method: API key of the owner, read from the environment variable FRED_API_KEY by the network module only; at most one request a second
     schema_description: observations - date, value ('.' when none), realtime_start, realtime_end; series - id, units, frequency, last_updated (with its UTC offset), notes
+
+  - source_id: mospi_esankhyiki
+    provider: Ministry of Statistics and Programme Implementation (MoSPI), National Statistics Office - eSankhyiki
+    source_class: official_statistics
+    data_type: India macro statistics - consumer prices (CPI), industrial production (IIP) and quarterly national accounts (GDP)
+    endpoint: https://api.mospi.gov.in (/api/cpi/getCPIData, /api/iip/getIipData and /api/nas/getNASData only; JSON, paged)
+    authority: primary
+    license: MoSPI's own datasets are Category A under the Government Statistics Data Dissemination policy 2026 - reuse allowed with prominent attribution (Source - MoSPI, eSankhyiki); data from other ministries (WPI) and RBI tables are not used (ADR-009)
+    update_frequency: monthly (CPI on the 12th, IIP on the 28th) and quarterly (GDP)
+    historical_coverage: CPI base 2024 from 2025 and its back series 2013-2024 (recalculated); IIP base 2022-23 from 2023; GDP base 2022-23 from April 2022
+    latency: about two weeks (CPI), four weeks (IIP) and two months (GDP) after the period
+    revision_policy: no publication time and no provisional or final marks are given; a changed value read later is a new vintage from that read; a base-year change is a new series
+    timestamp_semantics: publication_time
+    reliability_rating: A
+    authentication_method: none (public API; no key); requests spaced 3 seconds apart; the server needs TLS legacy renegotiation, allowed for this host only with certificate checks on (ADR-009)
+    schema_description: data rows with base_year, series, year, month or financial-year quarter, the filter fields and the measures (index, inflation, growth_rate, constant_price, current_price); meta_data with page, totalRecords, totalPages, recordPerPage
+
+  - source_id: market_calendars
+    provider: exchange_calendars open-source library (Apache License 2.0), compiled from the exchanges' holiday notices
+    source_class: licensed_vendor
+    data_type: trading calendars - closed weekdays and weekend sessions of New York (XNYS), Tokyo (XTKS) and NSE/BSE (XBOM), 2006-2026
+    endpoint: config/market_calendars.yaml, generated with exchange_calendars 4.13.2 (no network use by this system)
+    authority: secondary
+    license: Apache License 2.0 - licence text kept in docs/third_party/exchange_calendars-LICENSE.txt; holiday dates are facts from the exchanges' public notices
+    update_frequency: yearly, when exchanges announce the next year's holidays (regenerate before coverage ends)
+    historical_coverage: 2006-01-01 to 2026-12-31
+    latency: as published by the library
+    revision_policy: a corrected or extended calendar is a regenerated, reviewed file committed with its test changes
+    timestamp_semantics: effective_date
+    reliability_rating: B
+    authentication_method: none (a file in the repository)
+    schema_description: per calendar - id, name, time zone, coverage, closed weekdays, weekend sessions; series_calendars maps macro series to the calendar that decides their trading days

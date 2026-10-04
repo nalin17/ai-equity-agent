@@ -23,6 +23,9 @@ Commands:
                             your own key (environment variable FRED_API_KEY) - ADR-008
   show-macro [SERIES]       the macro context as known now: each series' latest value, or one series'
                             recent values with their vintages
+  fetch-india [--series A,B]  fetch India's CPI, IIP and GDP series in config/india_macro_series.yaml
+                            from MoSPI's API (no key needed) - ADR-009
+  show-india [SERIES]       India's macro statistics as known now, or one series' recent values
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
@@ -35,8 +38,9 @@ retrieval time: it is the moment the data verifiably entered this system
 (architecture 5B.2).
 
 News is the one exception: fetch-news asks GDELT, whose terms allow automated use
-(ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), and fetch-macro asks FRED's API
-with your own key (ADR-008) - nothing else. Article links are never opened.
+(ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), fetch-macro asks FRED's API
+with your own key (ADR-008), and fetch-india asks MoSPI's API (ADR-009) - nothing else.
+Article links are never opened.
 """
 import sys
 from datetime import datetime, timedelta, timezone
@@ -52,12 +56,16 @@ from features.price_series import AdjustmentBlocked, adjusted_series, raw_series
 from ingestion.intake import checklist_items, collect_downloads, ingest_inbox, write_checklist  # noqa: E402
 from ingestion.macro_context import FRED_NOTICE, latest, observations, registered_series, series_info  # noqa: E402
 from ingestion.macro_context import sync_series  # noqa: E402
+from ingestion.india_macro import ATTRIBUTION, india_latest, india_observations, india_series_info  # noqa: E402
+from ingestion.india_macro import registered_india_series, requests_to_fetch, sync_india_series  # noqa: E402
+from core.calendars import load_calendars  # noqa: E402
 from ingestion.gdelt_news import ENTITY_RULE, extract, stories, sync_news_names  # noqa: E402
 from ingestion.gdelt_news import DEDUP_RULE as NEWS_DEDUP_RULE  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
 from ingestion.news_fetch import MIN_INTERVAL, Fetcher, default_window, fetch_company, fetch_sebi  # noqa: E402
 from ingestion.news_fetch import FRED_INTERVAL, FetchError, FredClient, RateLimited, fetch_macro_series  # noqa: E402
 from ingestion.news_fetch import fred_key  # noqa: E402
+from ingestion.news_fetch import MOSPI_INTERVAL, MospiClient, fetch_india_request  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
@@ -520,6 +528,79 @@ def show_macro(args):
             start = r["realtime_start"] + (" or earlier" if r["start_clipped"] else "")
             print(f"  {r['date']}  {value:>32}  vintage from {start:<22} public {when(r['available_at'])}")
     print(f"  {FRED_NOTICE}")
+    calendars, _ = load_calendars()
+    ends = min(cal.coverage_to for cal in calendars.values())
+    days_left = (ends - now.date()).days
+    print(f"  Market calendars cover to {ends}" + (f" - REGENERATE THEM: {days_left} days left (ADR-009)"
+                                                  if days_left < 60 else ""))
+    conn.close()
+
+
+def fetch_india(args):
+    usage = "Usage: python manage.py fetch-india [--series A,B]"
+    wanted = None
+    if args:
+        if len(args) != 2 or args[0] != "--series":
+            raise SystemExit(usage)
+        wanted = args[1].split(",")
+    log = setup_logging()
+    conn = open_db()
+    added = sync_india_series(conn)
+    if added:
+        log.info("India macro series newly recorded: %s", ", ".join(added))
+    if wanted:
+        unknown = sorted(set(wanted) - set(registered_india_series(conn)))
+        if unknown:
+            raise SystemExit(f"Not registered: {', '.join(unknown)} - declare them in config/india_macro_series.yaml")
+    requests = requests_to_fetch(conn, wanted)
+    client = MospiClient()
+    log.info("Fetching %s MoSPI requests - at least %.0f seconds between requests", len(requests), MOSPI_INTERVAL)
+    failed = 0
+    for number, (dataset, request) in enumerate(requests):
+        label = f"{dataset} {request}"
+        try:
+            result = fetch_india_request(conn, client, dataset, request, fetched_dir())
+        except RateLimited as e:
+            failed += len(requests) - number
+            log.error("%s: NOT FETCHED - %s (%s requests left unfetched)", label, e, len(requests) - number)
+            break
+        except Exception as e:  # report and carry on with the next request; nothing partial is stored
+            failed += 1
+            log.error("%s: NOT FETCHED - %s: %s", label, type(e).__name__, e)
+            continue
+        problems = result.pop("problems", [])
+        log.info("%s: %s", label, result)
+        for problem in problems:
+            print(f"     {problem}")
+    log.info("MoSPI requests: %s. %s", client.requests, ATTRIBUTION)
+    conn.close()
+    if failed:
+        raise SystemExit(f"{failed} MoSPI request(s) not fetched - see the messages above; run fetch-india again later")
+
+
+def show_india(args):
+    if len(args) > 1 or (args and args[0].startswith("--")):
+        raise SystemExit("Usage: python manage.py show-india [SERIES]")
+    conn = open_db()
+    sync_india_series(conn)
+    now = datetime.now(timezone.utc)
+    when = lambda t: parse_timestamp(t).astimezone(IST).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    print("India macro statistics as known now (current decision; MoSPI gives no publication time, so past"
+          " decisions cannot be replayed with them). 'read' is when this system first saw each value, India time.")
+    if not args:
+        for sid in registered_india_series(conn):
+            info, found = india_series_info(conn, sid), india_latest(conn, sid, now)
+            shown = (f"{found['period']}  {found['value_text']:>12}  read {when(found['known_from'])}"
+                     if found else "nothing fetched yet")
+            print(f"  {sid:<22} {shown}" + ("   (reconstructed)" if info["status"] == "reconstructed" else ""))
+            print(f"  {'':<22} {info['title']} - {info['unit']}")
+    else:
+        info = india_series_info(conn, args[0])
+        rows = india_observations(conn, args[0], now)
+        print(f"{args[0]}: {info['title']} ({info['unit']}; {info['frequency']}; {info['status']})")
+        for r in rows[-24:]:
+            print(f"  {r['period']}  {r['value_text']:>14}  read {when(r['known_from'])}")
+    print(f"  {ATTRIBUTION}")
     conn.close()
 
 
@@ -625,6 +706,8 @@ def report(args):
           f"  from {one('SELECT COUNT(*) FROM sb_reads')} reads of the feed")
     print(f"Macro series (FRED):       {one('SELECT COUNT(*) FROM mc_series')} series,"
           f" {one('SELECT COUNT(*) FROM mc_vintages')} vintages from {one('SELECT COUNT(*) FROM mc_responses')} answers")
+    print(f"India macro (MoSPI):       {one('SELECT COUNT(*) FROM mo_series')} series,"
+          f" {one('SELECT COUNT(*) FROM mo_values')} values from {one('SELECT COUNT(*) FROM mo_reads')} reads")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -659,6 +742,8 @@ COMMANDS = {
     "show-sebi": show_sebi,
     "fetch-macro": fetch_macro,
     "show-macro": show_macro,
+    "fetch-india": fetch_india,
+    "show-india": show_india,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

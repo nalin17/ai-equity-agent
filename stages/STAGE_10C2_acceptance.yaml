@@ -1,0 +1,40 @@
+stage: "10C-2 - India macro context (MoSPI) and market calendars"
+status: ACCEPTED_INDIA_MACRO_AND_CALENDARS_BASELINE
+architecture: [40B step 9a, 3G, 4, 4C, 4C.1, 4G, 5A.1, 5B, 5C, 40D, 47 criteria 90 92-94 96-98, 47A guardrails 17 19 20, ADR-009]
+proven:
+  - Market calendars for New York (XNYS), Tokyo (XTKS) and NSE/BSE (XBOM), 2006-2026, are generated from exchange_calendars (Apache License 2.0, licence text kept) and checked whole before use; outside their coverage they refuse to answer (tested)
+  - For a series mapped to a calendar (Nasdaq to XNYS, Nikkei to XTKS) a value on a day that market was closed is never used, no value on a day it traded is a source conflict, and days without a row are classified by the calendar; the stored vintage stays as FRED gave it; unmapped series keep FRED's listing (tested)
+  - India series are declared in config/india_macro_series.yaml, recorded once and never silently changed; series sharing a request must expect the same fields; a back series must be declared reconstructed (tested)
+  - Every MoSPI page is kept byte for byte; an answer that is not MoSPI's paged list, reports failure, is empty, has pages that disagree or fall short of the stated total, or has a row not matching the declared filters is refused whole; breakdown rows are told apart from the declared aggregate (tested)
+  - A blank measure (no year-on-year rate in a base's first year) is counted, never stored or filled; a period with two values in one answer is not stored; a changed value read later is a new vintage and the old one stays known as of earlier (tested)
+  - MoSPI values support current decisions from this system's first read only; under historical replay nothing is returned (AVAILABILITY_REVIEW: no publication time); the back series is marked reconstructed (tested)
+  - The fetcher asks only https://api.mospi.gov.in for /api/cpi/getCPIData, /api/iip/getIipData and /api/nas/getNASData, at least 3 seconds apart, reads every page before writing anything, refuses more than 20 pages and stops asking after HTTP 429 (tested)
+  - TLS legacy renegotiation is switched on for api.mospi.gov.in only; certificates and host names are checked for every host, and no code switches checking off (tested, static test)
+  - "Real data: NSE's official 2026 trading holidays agree with the India calendar 16 of 16; FRED's Nasdaq 2016-2026 agrees on 102 of 103 closed days and the Nikkei on 180 of 181 - the exceptions, Good Friday 19-Apr-2019 and the Tokyo outage of 1-Oct-2020, carry the previous close repeated and are now classified as closed days"
+  - 58 of 58 deliberate faults in the new code were caught (three escaped at first - a row outside a calendar's coverage, a page identical to another source's file, and dating a read by its first page; tests were added); after the shared code changed, Stage 10C 63 of 63, Stage 10 32 of 32 and Stage 10B 21 of 21 still caught
+  - "Real data (live MoSPI answers of 04-Oct-2026, 16 requests; loaded on a copy of the database): 9 series, 461 values from 5 reads of 15 pages, 0 problems; 24 year-on-year rates not given for the first year of a base (2025 on base 2024, 2013 on the back series) - counted, not stored"
+  - "Real data: latest values - CPI August 2026 index 108.74, inflation 4.82; IIP August 2026 general 123.3, growth 8.0, manufacturing 126.6 (picked from 984 rows with 23 sub-industries); GDP April-June 2026 8,136,153 crore at constant and 8,826,871 crore at current prices; CPI back series 2013-2024 reconstructed"
+  - "Real data: asking for India food inflation returned 44 pages - refused by the 20-page limit and left out until a narrower filter is found"
+  - "Real data: on the owner's FRED history (2,805 Nasdaq and 2,806 Nikkei dates) the calendars set aside exactly the two repeated closes - Nasdaq 19-Apr-2019 and Nikkei 1-Oct-2020 - and find no trading day without a value"
+  - "Real data: US Treasury yields follow the bond-market calendar (closed on Columbus and Veterans Day, open on Good Friday) and VIX is computed on some US holidays, so neither is mapped to the stock-exchange calendar"
+  - "Real data (the owner's first live fetch-india, 04-Oct-2026 17:59 India time, on the owner's database): 9 series recorded, 15 requests, 5 reads of 15 pages, 461 values, 24 year-on-year rates not given (counted), 0 rows refused, 0 problems - the same numbers as the tested copy; latest CPI Aug-2026 108.74 and 4.82, IIP Aug-2026 123.3 and 8.0, manufacturing 126.6, GDP Apr-Jun 2026 8,136,153 and 8,826,871 crore"
+  - "Real data: the 16 installed files are identical to the tested copies; schema version 18; sources mospi_esankhyiki and market_calendars registered; 740 tests passed on the owner's computer"
+not_claimed:
+  India food inflation (MoSPI answers that request with 44 pages a day; it waits for a narrower filter): false
+  WPI (its publisher's reuse terms are not published) and RBI tables: false
+  CPI base 2012 series with its provisional and final marks: false
+  India VIX and Nifty history (awaiting NSE's answer to the research-data request): false
+  publication times of MoSPI releases (scheduled release calendar not used as proof): false
+  calendars for Cboe, the US bond market, Shanghai or Hong Kong: false
+  calendars beyond 2026-12-31 (show-macro warns 60 days before): false
+  early-close times (only open or closed days are used): false
+negative_assertions:
+  value on a day its market was closed used as a close: false
+  MoSPI value used before this system read it: false
+  reconstructed back series presented as what was known at the time: false
+  revised value overwriting an earlier vintage: false
+  blank measure filled or stored as a value: false
+  answer whose rows do not match the request stored: false
+  MoSPI address other than the three data addresses asked for: false
+  certificate checking switched off: false
+  macro series used as a covered security, target or benchmark: false

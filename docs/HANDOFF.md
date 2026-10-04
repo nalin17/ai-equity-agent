@@ -1,62 +1,99 @@
 # HANDOFF - AI Self-Learning Equity Research Agent
 
-Rewritten 2026-10-03 at the end of the second long build chat, so that a new chat can
-continue without losing anything. Read this WHOLE file before doing anything else. It
-replaces the 2026-10-02 handoff and keeps everything that was in it.
+Rewritten 2026-10-04 at the end of the third long build chat (Stages 10C and 10C-2), so
+that a new chat can continue without losing anything. Read this WHOLE file before doing
+anything else. It replaces the 2026-10-03 handoff and keeps everything that was in it.
+The governing architecture is `docs/Master_Architecture_v2_2_0_FROZEN.md` (v2.2.0).
 
 ---
 
-## 0. Read first - exact state at the end of the second chat
+## 0. Read first - exact state at the end of the third chat (04-Oct-2026, about 18:30 India time)
 
 | Item | State |
 |---|---|
-| Last pushed commit | `ac0633f` Stage 10B (SEBI releases). CI green. |
-| Tests at `ac0633f` | 518 passed |
-| Database | `data/equity.sqlite`, schema version 16 (migrations 0001-0016) |
-| Architecture | v2.2.0 written and audited, installed TOGETHER WITH THIS FILE by `data\handover\install_v220.py`. After that install and its commit: 521 tests. |
-| Next build | Stage 10C = architecture 40B step 9a, Global and India Macro Context (section 12 of this file) |
+| Last pushed commit | `36450db` Stage 10C (FRED/ALFRED macro context, ADR-008). CI green. 632 tests. |
+| Working tree (NOT committed yet) | Stage 10C-2 installed by the owner: 10 new files + 6 patched files. All 16 were checked byte for byte (new files) and with `diff --strip-trailing-cr` (patched files) against the tested copies: identical. |
+| Tests on the owner's computer | `740 passed` (test_output.txt, 04-Oct 17:58) |
+| Database | `data/equity.sqlite`, schema version 18 (migrations 0001-0018). Backup before 10C-2: `data/equity_before_10c2.sqlite`; before 10C: `data/equity_before_10c.sqlite`. |
+| First live fetch-india | Done by the owner 04-Oct-2026 17:59 India time and VERIFIED: 9 series, 15 requests, 5 reads of 15 pages, 461 values, 24 blank year-on-year rates counted, 0 refused, 0 problems - identical to the tested copy. |
+| Acceptance record update | Script ready and tested (twice, second run STOPs): `data\handover\stage10c2\patch_stage10c2_record.py`. NOT run yet. |
+| This handoff | `data\handover\HANDOFF_new.md`; it becomes `docs\HANDOFF.md` in the 10C-2 commit (section 0.1). |
+| Next build | Stage 10D = architecture 40B step 9b, Macro and Geopolitical Events (section 14). |
 
-If this file is being read from `data\handover\HANDOFF_new.md` rather than from
-`docs\HANDOFF.md`, the install has NOT been done yet: do section 0.1 first.
+If `git log -1` still shows `36450db`, the Stage 10C-2 commit has NOT been made yet: do
+section 0.1 first. If it shows a "Stage 10C-2" commit, verify it (section 0.1, "After done").
 
-### 0.1 Finishing the v2.2.0 install (if `docs\Master_Architecture_v2_2_0_FROZEN.md` is missing)
+### 0.1 Finishing Stage 10C-2 (owner commands; the assistant only verifies)
 
-Everything needed is in `C:\Users\nalin\Projects\ai-equity-agent\data\handover\`
-(`data/` is git-ignored, so it stays on disk and out of GitHub). The owner runs, in
-PowerShell from the project folder with the venv active:
+The owner runs, in PowerShell from the project folder with the venv active
+(`.venv\Scripts\Activate.ps1`), one block at a time:
 
 ```powershell
-python data\handover\install_v220.py
+python data\handover\stage10c2\patch_stage10c2_record.py
+```
+Expected: `patched stages/STAGE_10C2_acceptance.yaml` (a second run prints `STOP: the live
+run is already recorded. Nothing was changed.`). It removes the not_claimed line "first
+live fetch-india run by the owner (verified after this commit)" and adds two proven lines
+with the live numbers.
+
+```powershell
+Copy-Item data\handover\HANDOFF_new.md docs\HANDOFF.md
+```
+(Overwrites the tracked handoff with this file - git keeps the old one.)
+
+```powershell
 python -m pytest -q > test_output.txt 2>&1; Get-Content test_output.txt -Tail 1
-git add docs tests README.md
-git commit -m "Architecture v2.2.0 (ADR-007) and full handoff: global and macro factors, cross-market timing, return forecasts and decision rule, data policy - insertions only, control audit in CI" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+Expected: `740 passed` (test_architecture_baseline requires docs/HANDOFF.md and README.md
+to contain the text `Master_Architecture_v2_2_0_FROZEN.md` - this file does).
+
+```powershell
+git add src tests migrations config stages docs manage.py README.md
+git commit -m "Stage 10C-2: India macro statistics from MoSPI eSankhyiki and market calendars (ADR-009) - CPI, IIP and GDP as current-decision context from the first read; New York, Tokyo and NSE/BSE calendars set aside closes repeated on closed days; legacy TLS for MoSPI only, certificates always checked" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git push
 ```
 
-Expected: the installer prints 4 `copied` lines, `replaced docs/HANDOFF.md`,
-`patched README.md` and `INSTALL COMPLETE`; tests end `521 passed`. A second run of the
-installer prints `STOP ... already installed ... Nothing was changed`. Then verify (section
-5, step 7) by comparing the committed files with `data\handover\arch220_files\` and
-`data\handover\HANDOFF_new.md` (`diff -q --strip-trailing-cr`), and check CI.
+After the owner replies "done", verify (method section 5 step 7):
+- `git log --oneline -2`, `git status --short` (must be empty; `data/` and
+  test_output.txt are ignored), HEAD equals origin/main (`git rev-parse HEAD origin/main`).
+- `test_output.txt` last line (it is UTF-16 - decode as UTF-16): 740 passed.
+- Committed files equal the tested copies: new files in
+  `data\handover\stage10c2\files\` (cmp), patched files equal what is on disk now; the
+  acceptance record has the two new "first live fetch-india" lines and no longer the
+  not_claimed line; docs/HANDOFF.md equals data/handover/HANDOFF_new.md
+  (`diff -q --strip-trailing-cr`).
+- CI: `curl -s "https://api.github.com/repos/nalin17/ai-equity-agent/actions/runs?per_page=2"`
+  (status completed, conclusion success, head_sha = the new commit).
+- Then offer to delete the 143 MB scratch environment `C:\Users\nalin\AppData\Local\Temp\xcal`
+  (exchange_calendars 4.13.2 for regenerating calendars - the owner was told it would be
+  deleted after the commit unless they want it kept; it can be recreated in 2 minutes:
+  `python -m venv xcal` then `xcal\Scripts\pip install exchange_calendars==4.13.2`, with
+  the owner's permission, because pip downloads files).
 
-### 0.2 Things the owner still has to do (none blocks the install)
+### 0.2 Things the owner still has to do
 
-1. Run the first live news fetch: `python manage.py fetch-news`, then
-   `python manage.py show-news HDFCBANK`. GDELT refused this computer for hours on
-   03-Oct-2026 after a night of testing, so wait a few hours after any heavy testing. If
-   it ends "NOT FETCHED - GDELT refused", nothing is wrong and nothing was stored; run it
-   again later. Then reply "fetched" so the assistant can verify (section 9.6).
-2. Daily routine from now on: `python manage.py fetch-sebi` (at least daily - SEBI's feed
-   keeps only about three working days) and `python manage.py fetch-news`.
-3. Create a FREE FRED API key for Stage 10C (fred.stlouisfed.org -> My Account -> API
-   Keys). Never paste it into chat. Stage 10C will tell the owner where to store it on
-   their machine (environment variable or an untracked file - architecture 4G rule 5).
-4. Optional, for Stage 11 sentiment: the Alpha Vantage probe (section 11.3). The owner
-   types their key at a PowerShell prompt; it never enters chat or the repository.
+1. Send the NSE research-data request (section 13.6): fill the official form with the
+   answers in `data\handover\nse_request\1_form_answers.txt` (tick mark U+2713 where the
+   form asks for a tick), sign it, attach it to the email drafted in
+   `data\handover\nse_request\2_email_to_nseri.txt`, send it to nseri@nse.co.in from their
+   own mail. The assistant never sends it. Reply expected in weeks; refusal possible
+   (eligibility text says accredited academic institutions; the owner has no academic
+   link and applies as an independent researcher).
+2. Daily routine from now on (in this order is fine):
+   `python manage.py fetch-sebi` (at least once a day - SEBI's feed holds only about three
+   working days; LAST READ WAS 03-Oct-2026 15:06 India time, so run it on Monday 05-Oct at
+   the latest), `python manage.py fetch-news`, `python manage.py fetch-macro`,
+   `python manage.py fetch-india`.
+3. The first live `fetch-news` (GDELT) is STILL outstanding: nw_responses = 0. Run
+   `python manage.py fetch-news` then `python manage.py show-news HDFCBANK`; if it ends
+   "NOT FETCHED - GDELT refused", nothing is wrong; try again hours later. Reply "fetched"
+   so the assistant can verify (section 9.6).
+4. Optional, for Stage 11 sentiment: the Alpha Vantage probe (section 13.3).
 5. Open decisions (the assistant raises them at the right stage): the 30-company coverage
-   cohort is NOT chosen yet (architecture 3A.2 rule 5: the rule must be mechanical,
-   preregistered and dated); price-history source for step 6a (NSE research-data request
-   first, a vendor only if needed); paid plans only after free ones prove insufficient.
+   cohort is NOT chosen (architecture 3A.2 rule 5: rule mechanical, preregistered, dated);
+   price history for step 6a (NSE research request first; an authorised paid vendor if too
+   slow - each paid source needs the owner's approval with its price and terms; the owner
+   said they are willing to pay where needed).
 
 ---
 
@@ -70,11 +107,13 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
 - When output is long they save it to a file (`test_output.txt`) for the assistant to
   read; the assistant reads project files directly from disk to verify.
   `test_output.txt` is written by Windows PowerShell `>` and is UTF-16 - decode it as
-  UTF-16 (a plain `tail -1` shows a blank line).
+  UTF-16 (a plain `tail -1` shows spaced-out characters or a blank line).
 - The owner delegates judgement: "whatever you feel is right and best suited to make
   the model robust". Prefer robustness and fail-closed behaviour over coverage. For
   decisions that change policy (new network access, new source, paid plan, architecture)
   the assistant asks first - the AskUserQuestion tool worked well for this.
+- The owner asks the assistant to cross-verify facts ("just cross verify again") - check
+  the primary source and quote it, do not answer from memory.
 - The owner's goal, in their words (03-Oct-2026): build it "like an big institutional
   level model for my personal recommendation"; the model "should be able to predict
   which stock to buy, hold or sell and what could be the percentage gain by holding that
@@ -82,15 +121,20 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
   learning all the factors that can influence its growth or downfall" - including global
   news, technical and fundamental factors, oil, wars, China, Japan, US markets, bonds,
   Treasury news, and sovereign and other ratings. Architecture v2.2.0 (ADR-007) is the
-  answer: see section 10.
-- On data: the owner asked for APIs instead of hand downloads where legal ("is there any
-  other way to download or get an api"), and set the rule "first check the free option,
-  if not we will buy the premium plan". The assistant must say in advance which stage
-  needs which key from which source.
+  answer: see section 12.
+- On data: the owner asked for APIs instead of hand downloads where legal, and set the
+  rule "first check the free option, if not we will buy the premium plan". On 03-Oct-2026
+  they added: "Whatever we are sure of lets take it from repo and rest as and when
+  required will take API, even if we have to purchase it" and then chose LICENSED ONLY
+  (section 13.5). The assistant must say in advance which stage needs which key from
+  which source - free options first.
 - Never ask them to run PowerShell as Administrator (it once broke the pytest cache).
 - They have a separate project (C:\Users\nalin\Documents\Stock-Analysis-Agent, repo
   nalin17/ai-self-learning-equity-research). Do NOT reuse it: ADR-002 (independent build).
 - At the end of a long chat the owner asks for a handover file like this one.
+- Usage limits: the chat can stop mid-task ("I hit my usage limit ... Please continue from
+  where you left off"). Keep work restartable: everything that must survive goes under
+  `data\handover\`, never only in the session scratchpad.
 
 ## 2. Project facts
 
@@ -101,14 +145,16 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
 | OS / Python | Windows 11 Home, Windows PowerShell 5.1, Python 3.14, venv at `.venv` (activate: `.venv\Scripts\Activate.ps1`) |
 | Database | SQLite at `data/equity.sqlite` (ADR-001: DuckDB is blocked by Windows Smart App Control - never suggest disabling it) |
 | Tests | pytest; `pytest.ini`: pythonpath = src, testpaths = tests, addopts = -p no:cacheprovider |
-| CI | `.github/workflows/tests.yml`, Python 3.14, runs pytest on every push |
-| Dependencies | requirements.txt: pytest, pyyaml (nothing else); network code uses only the standard library (urllib) |
-| Internet use | only `fetch-news` (GDELT news, ADR-005) and `fetch-sebi` (SEBI's one RSS feed, ADR-006); everything else is hand downloads |
+| CI | `.github/workflows/tests.yml`, Python 3.14, runs pytest on every push (Linux) |
+| Dependencies | requirements.txt: pytest, pyyaml (nothing else); network code uses only the standard library (urllib, ssl). exchange_calendars is NOT a dependency - it only generated config/market_calendars.yaml |
+| Internet use by the program | only `src/ingestion/news_fetch.py`, allow-list of 4 hosts: api.gdeltproject.org (fetch-news, ADR-005), www.sebi.gov.in (only /sebirss.xml, fetch-sebi, ADR-006), api.stlouisfed.org (fetch-macro, ADR-008), api.mospi.gov.in (fetch-india, ADR-009). Everything else is hand downloads |
+| FRED key | Windows USER environment variable `FRED_API_KEY`, set by the owner in their own PowerShell; read only by news_fetch.py; never in chat, repo, DB, files, logs, URLs stored or errors |
 | Git line endings | core.autocrlf=true; index is LF; working files are CRLF or mixed - fine |
 | `.gitignore` | .venv/, __pycache__/, *.pyc, .pytest_cache/, .env, data/, *.duckdb, *.parquet, logs/, test_output.txt, git_status.txt |
 | Log file | `logs/app.log` (every command logs there; the assistant reads it to verify runs) |
 | Check CI | `curl -s "https://api.github.com/repos/nalin17/ai-equity-agent/actions/runs?per_page=2"` |
 | Microsoft Edge | `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` (version 154) - used headless to print the architecture PDF |
+| Owner's temp folder | `C:\Users\nalin\AppData\Local\Temp` (`$env:TEMP`); `xcal\` there = exchange_calendars scratch venv |
 
 ## 3. Authority documents
 
@@ -118,9 +164,10 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
   every commit. The PDF copy `docs/Master_Architecture_v2_2_0_FROZEN.pdf` (81 pages) is
   generated from it and never edited (46A). The owner said of v2.1.1 "consider this as
   final freezed architect, we will stick to it" and of v2.2.0 "freeze it new final version
-  that we have to follow". Section numbers in code and acceptance records (4, 4A, 4C, 5B,
-  6C, 6D, 9B, 40B, 40D ...) refer to it. Amend it only under section 46/46A: as
-  insertions, with an ADR, a control audit, and the audit test kept green.
+  that we have to follow". Section numbers in code and acceptance records (3G, 4, 4A, 4C,
+  4C.1, 4G, 5A.1, 5B, 5C, 6C, 6D, 9B, 40B, 40D, 47, 47A ...) refer to it. Amend it only
+  under section 46/46A: as insertions, with an ADR, a control audit, and the audit test
+  kept green.
 - `docs/Master_Architecture_v2_1_1_FROZEN.md` and `docs/Master_Architecture_v1_11.md` -
   kept for history (the audit test reads v2.1.1, so never delete it).
 - Sections 40C, 49's status remarks and "Current implementation position (v2.1.1)"
@@ -136,6 +183,12 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
   - ADR-006 SEBI's RSS feed read by the program at most hourly; RBI not used (its terms
     forbid caching and linking without written permission).
   - ADR-007 architecture v2.2.0 (ACR-103 to ACR-113).
+  - ADR-008 FRED/ALFRED macro context (Stage 10C): host api.stlouisfed.org, key from the
+    environment, FRED notice.
+  - ADR-009 MoSPI eSankhyiki India macro and market calendars (Stage 10C-2): 4th host
+    api.mospi.gov.in with legacy TLS renegotiation for that host only; calendars generated
+    from exchange_calendars (Apache-2.0, licence text in
+    `docs/third_party/exchange_calendars-LICENSE.txt`).
 - Scope (architecture section 3): one exchange (NSE, India), 30-company focus cohort
   first. Other countries' stocks are never covered; world markets, rates, FX,
   commodities and geopolitics enter as macro context (3G) and events (4A.0). Outputs
@@ -150,97 +203,129 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
    than `src/ingestion/news_fetch.py` imports a network library
    (`tests/test_stage08c_intake.py::test_no_code_contacts_a_website`,
    `tests/test_stage10_news.py::test_only_the_news_fetcher_opens_network_connections`).
-   news_fetch.py may call only api.gdeltproject.org (ADR-005) and exactly
-   https://www.sebi.gov.in/sebirss.xml (ADR-006); it follows no redirects. Any new
-   network source needs the owner's approval, an ADR, a terms check and a change to the
-   allow-list and its tests (architecture 4G).
-2. TradingView data is display-only (non-display/machine use prohibited) - not a source,
+   news_fetch.py may call only the 4 allowed hosts (section 2) and only their declared
+   paths; it follows no redirects. Any new network source needs the owner's approval, an
+   ADR, a terms check and a change to the allow-list and its tests (architecture 4G).
+2. LICENSED ONLY (owner decision 03-Oct-2026): from GitHub/Hugging Face take only what the
+   licences and the original data owners allow. Repositories that copy NSE data (bhavcopy
+   mirrors, Nifty/India VIX histories, scraped datasets) are NOT used - not even after
+   comparing them with our own files.
+3. TradingView data is display-only (non-display/machine use prohibited) - not a source,
    also not when a vendor such as Alpha Vantage relays it (4G rule 8).
-3. The assistant never downloads files without explicit permission; reading a page in
-   the browser to design code is fine. The owner downloads; the assistant reads files
-   from `C:\Users\nalin\Downloads` or `data\inbox`. Research samples fetched with the
-   owner's permission go to the scratch folder (now preserved in `data\handover\research`).
-   Careful: navigating the browser pane to a URL that serves a file (for example Alpha
-   Vantage's terms PDF) pops up a save dialog on the owner's screen - avoid it.
-4. Never ask for, display or store API keys or passwords in chat, in the repository, in
+4. The assistant never downloads files without explicit permission (state file name,
+   source and size when asking); reading a page in the browser to design code is fine.
+   The owner downloads; the assistant reads files from `C:\Users\nalin\Downloads` or
+   `data\inbox`. Research samples fetched with the owner's permission go to
+   `data\handover\research\`. Navigating the browser pane to a URL that serves a file pops
+   up a save dialog on the owner's screen - avoid it. `pip install` downloads files too:
+   ask first.
+5. Never ask for, display or store API keys or passwords in chat, in the repository, in
    logs, in stored URLs or in error messages (4G rule 5). Keys are typed by the owner
-   into their own PowerShell (`$env:NAME = Read-Host "..."`) or kept in an untracked file.
-5. Never repair source data silently; refuse, quarantine or mark missing with a reason
-   (missing-data classes, 4C).
-6. Everything is append-only (triggers on history tables); corrections are new versions.
-7. Point in time (5B, 5C): use only what was knowable at the decision time; publication
+   into their own PowerShell or stored by them as a user environment variable.
+6. Never repair source data silently; refuse, quarantine or mark missing with a reason
+   (missing-data classes, 4C). Never fill a blank, never carry a value forward.
+7. Everything is append-only (triggers on history tables); corrections are new versions
+   (vintages).
+8. Point in time (5B, 5C): use only what was knowable at the decision time; publication
    times must be proven (exchange dissemination time, our own retrieval, GDELT's first-seen
-   time + 15 minutes) or the item is AVAILABILITY_REVIEW for historical replay. A foreign
-   close never enters an Indian decision before that close existed (5C).
-8. Ingested text is data, never instruction (4D). Tests include injection-shaped text.
-9. Commercial Indian news sites are not sources: Business Standard and HT/Mint terms
-   forbid AI use (RSS included); Economic Times blocks automated reading. Never open
-   article links from GDELT; never read article bodies.
-10. Never put real individuals' names or tax ids (they appear in SEBI titles) into tests
+   time + 15 minutes, FRED's own last_updated read after the data) or the item is
+   AVAILABILITY_REVIEW for historical replay. A foreign close never enters an Indian
+   decision before that session ended (5C). A value on a day its market was closed is
+   never used as a close.
+9. Ingested text is data, never instruction (4D). Tests include injection-shaped text.
+10. Commercial Indian news sites are not sources: Business Standard and HT/Mint terms
+    forbid AI use (RSS included); Economic Times blocks automated reading. Never open
+    article links from GDELT; never read article bodies. RBI is not used (ADR-006).
+11. Never put real individuals' names or tax ids (they appear in SEBI titles) into tests
     or the public repository; use company names in fixtures.
+12. Certificate checking is never switched off (a static test enforces it). Only
+    api.mospi.gov.in gets `ssl.OP_LEGACY_SERVER_CONNECT`, nothing else.
+13. Macro series are context only: never a covered security, target or benchmark (static
+    tests: no target/benchmark/ledger/calibration/validation/model/universe module imports
+    the macro context).
 
 ## 5. How each stage is built and handed over (follow exactly)
 
 1. Research first on REAL data: read pages in the browser (read only; WebFetch is
-   blocked by many Indian sites and Alpha Vantage's terms PDF needs the browser), check
-   the source's terms (4G rule 1), then ask the owner for permission to fetch samples or
-   ask them to download specific files (exact page, filters, file names). Inspect real
-   files before writing code (columns, quirks, identities, time stamps).
+   blocked by many Indian sites), check the source's terms (4G rule 1), then ask the owner
+   for permission to fetch samples (state how many requests) or ask them to download
+   specific files. Inspect real files before writing code (columns, quirks, identities,
+   time stamps). Probe scripts that need a key read it from the environment and never
+   print it (`tools\fred_probe.py` is the model).
 2. Build in a scratch copy: `git ls-files | tar -cf - -T -` into a scratchpad folder,
-   convert CRLF to LF there (`sed -i 's/\r$//'` on .py/.sql/.yaml/.md/.ini/.txt), and run
-   tests with the owner's venv interpreter, which already has pytest and pyyaml:
+   convert CRLF to LF there (`sed -i 's/\r$//'` on .py/.sql/.yaml/.md/.ini/.txt), copy the
+   owner's real config files that are not tracked if needed, and run tests with the
+   owner's venv interpreter, which already has pytest and pyyaml:
    `/c/Users/nalin/Projects/ai-equity-agent/.venv/Scripts/python.exe -m pytest -q`
    (the system Python has no pytest; nothing needs installing).
 3. Deliberate-fault checks: a script mutates one line of the new code at a time and runs
-   the stage tests; every fault must make a test fail. When one survives, add the missing
-   test - this found a real bug in Stage 10 (overlapping names: the shortest won). Stage
-   10: 32/32 caught; Stage 10B: 21/21. Scripts are kept in `data\handover\tools`.
+   the stage tests; every fault must make a test fail. Files are restored byte for byte;
+   every run goes through a dead proxy (HTTPS_PROXY to 127.0.0.1:9) so no fault can reach
+   the internet. When one survives, add the missing test. When shared code changes, re-run
+   the older stages' scripts too and update anchors that the new code duplicated or
+   reshaped. Final counts: Stage 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58. Scripts:
+   `data\handover\tools\mutate_stage10*.py <scratch repo root>`.
 4. Run the real data on a COPY of the owner's database (`cp data/equity.sqlite`), with
    copies of their downloads (never touch their Downloads folder), and record the real
-   numbers in the acceptance record.
+   numbers in the acceptance record (`tools\smoke_*.py <scratch root>`).
 5. Every file handed over is checked: pure ASCII (non-ASCII characters inside Python
-   strings become `\uXXXX` escapes - `tools\escape_tests.py` does it), and no line starting
-   with `'@` (that would end a PowerShell here-string).
+   strings become `\uXXXX` escapes; in YAML use a double-quoted `"\u20b9"` escape), and no
+   line starting with `'@` (that would end a PowerShell here-string).
 6. Hand-over method:
-   - Small files: paste blocks `@' ... '@ | Set-Content -Encoding ascii path\file`; both
-     migration files (up and down) in ONE block (the owner twice missed a down file).
-   - Since Stage 10 the new files are long, so the assistant builds a folder of tested
-     files and the owner copies them with one PowerShell loop that refuses to overwrite:
-     `Get-ChildItem $src -Recurse -File | ... if (Test-Path $dest) { "ALREADY THERE" } else { Copy-Item }`.
-     A folder in the session scratchpad disappears when the chat ends - for anything that
-     must survive, put it under `data\handover\` (git-ignored, persistent).
-   - Edits to existing files: a checked Python patch script (`patch_*.py`) that normalises
-     CRLF, checks every anchor occurs exactly once AND that the new text is not already
-     present, validates everything before writing anything, writes with `newline="\r\n"`,
-     prints `patched <file>` or `STOP: ... Nothing was changed`. Test it on copies of the
-     owner's real files first, and check that a second run STOPs.
-   - Rehearse the owner's exact PowerShell steps on a fresh copy of the repository with
-     the PowerShell tool before handing over.
-   - Then: tests to `test_output.txt` with the expected last line; `python manage.py
-     init-db` with the expected version and newly registered sources; the real-data
-     commands with expected numbers; commit and push.
+   - New files: a folder of tested files under `data\handover\<stage>\files\` and one
+     PowerShell loop that refuses to overwrite:
+     ```powershell
+     $src = "data\handover\stage10c2\files"; $root = (Resolve-Path $src).Path; Get-ChildItem $src -Recurse -File | ForEach-Object { $rel = $_.FullName.Substring($root.Length + 1); if (Test-Path $rel) { "ALREADY THERE: $rel" } else { New-Item -ItemType Directory -Force -Path (Split-Path $rel) | Out-Null; Copy-Item $_.FullName $rel; "copied $rel" } }
+     ```
+     A folder in the session scratchpad disappears when the chat ends - anything that
+     must survive goes under `data\handover\` (git-ignored, persistent).
+   - Edits to existing files: a checked Python patch script (`patch_*.py`, generated with
+     difflib from the tested copy) that normalises CRLF, checks every anchor occurs exactly
+     once AND that the new text is not already present, validates everything before
+     writing anything, writes with `newline="\r\n"`, prints `patched <file>` per file and
+     `PATCH COMPLETE`, or `STOP: ... Nothing was changed`. Test it on copies of the
+     owner's real files first; check that the result equals the tested copy and that a
+     second run STOPs.
+   - Rehearse the owner's exact PowerShell steps with the PowerShell tool on a fresh copy
+     of the repository in `$env:TEMP` (tracked files plus a copy of the DB), then
+     compare every resulting file with the tested copies, then delete the rehearsal folder.
+   - Then the owner runs: tests to `test_output.txt` with the expected last line; a DB
+     backup (`Copy-Item data\equity.sqlite data\equity_before_<stage>.sqlite`);
+     `python manage.py init-db` with the expected version and newly registered sources;
+     the real-data commands with expected numbers; replies "done".
+   - After the owner's first live run: verify it, then a small record patch
+     (`patch_<stage>_record.py`) moves "first live run" from not_claimed to proven with the
+     real numbers - before the commit (10C-2) or as its own commit (10C).
    - Commit messages end with `-m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
-   - `git add src tests migrations config stages docs manage.py` (never `data/`).
+   - `git add src tests migrations config stages docs manage.py README.md` (never `data/`).
 7. When the owner says "done": verify directly - `git log`, `git status`, HEAD equals
-   origin/main, the last line of `test_output.txt` (UTF-16), `diff -q --strip-trailing-cr`
-   of every changed file against the tested copy, read-only DB queries
-   (`sqlite3.connect("file:data/equity.sqlite?mode=ro", uri=True)`), `logs/app.log`, and CI.
+   origin/main, the last line of `test_output.txt` (UTF-16), `cmp` / `diff -q
+   --strip-trailing-cr` of every changed file against the tested copy, read-only DB queries
+   (`sqlite3.connect("file:data/equity.sqlite?mode=ro", uri=True)`; schema version is the
+   table `schema_version`, sources are in `source_registry`), `logs/app.log`, and CI.
 8. Tooling pitfalls learned:
-   - The Write tool turns a literal `\ufeff` into a real BOM, `\b` into a backspace and
-     `\uXXXX` escapes into real characters - use `chr(0xFEFF)`, and run the escape script.
-   - Bash heredocs mangle backslashes (`\\n`, `\\s`) - write scripts with the Write tool.
+   - The Write tool turns `\ufeff`, `\u00ae`, `\u20b9` and other `\uXXXX` escapes into
+     real characters and `\b` into a backspace - after writing, re-escape (a small
+     `to_ascii.py` / `tools\escape_tests.py`), or write a placeholder (e.g. RUPEE_SIGN) and
+     replace it with a script; use `chr(0xFEFF)` in code.
+   - Bash heredocs mangle backslashes (`\n`, `\u`) - write scripts with the Write tool.
+   - A failed write or an illegal value can truncate a scratch file - keep the tested copy
+     and restore from it; the owner's repository is only changed by the owner.
    - Python print of non-ASCII on this machine needs `PYTHONIOENCODING=utf-8`.
    - PowerShell 5.1: no `&&`; pass arguments to Start-Process as an array.
    - Static rules: `date.fromisoformat` only in `core/dates.py` (`strict_iso_date`);
      missing-data class names and extraction-confidence values are never string literals
      outside their home modules; the bare token REVIEW is banned in `src/`; network
-     imports only in news_fetch.py; no `investment_confidence` identifier in a module
-     that touches extraction confidence.
+     imports and environment reads only in news_fetch.py; no `investment_confidence`
+     identifier in a module that touches extraction confidence; no code switches
+     certificate checking off.
    - GDELT rate-limits hard: keep research requests few and minutes apart.
    - PDFs: there is no reportlab/poppler; render Markdown to HTML (`tools\md2html.py`) and
      print with headless Edge (`--headless=new --no-pdf-header-footer --print-to-pdf=...`).
+   - Windows time zones: `[System.TimeZoneInfo]` in PowerShell was used to verify the
+     hand-coded session rules (core/sessions.py) at 271,700 checkpoints.
 
-## 6. Stage history (all ACCEPTED, all pushed, CI green)
+## 6. Stage history (all ACCEPTED; all pushed except 10C-2; CI green)
 
 | Stage | Commit | Architecture | What it proved |
 |---|---|---|---|
@@ -260,43 +345,47 @@ installer prints `STOP ... already installed ... Nothing was changed`. Then veri
 | 8D | 7da4f0b | 40B step 7, 5 | NBFCs, life insurers, real 'Revision' rows, revisions recorded as dated corrections |
 | 9 | cf1c948 | 40B step 8, 4A, 4D | NSE corporate announcements; one release = one event (rule an-dedup-1); subject->type mapping an-types-1 |
 | (handoff) | f0ed7ff | - | first handoff notes |
-| 10 | 6c2a2f7 | 40B step 9, 4A, 4B.4, ADR-005 | news headlines from GDELT; extraction confidence stored apart from investment confidence; rules nw-entity-1 (company links) and nw-dedup-1 (copies) |
+| 10 | 6c2a2f7 | 40B step 9, 4A, 4B.4, ADR-005 | news headlines from GDELT; extraction confidence stored apart from investment confidence; rules nw-entity-1 and nw-dedup-1 |
 | 10B | ac0633f | 40B step 9, 4A, 5B, ADR-006 | SEBI releases from its RSS feed; public only from the first read; companies by exact registered name (sb-entity-1); kinds from SEBI's sections (sb-kinds-1) |
-| arch v2.2.0 | see git log | 46, ADR-007 | architecture amended by insertion only; control audit test in CI; this handoff |
+| arch v2.2.0 | 9bb500f | 46, ADR-007 | architecture amended by insertion only; control audit test in CI; second handoff |
+| 10C | 36450db | 40B step 9a, 3G, 4G, 5A.1, 5B, 5C, ADR-008 | 25 FRED/ALFRED series with session, time zone, publication time and vintages; a foreign close never reaches an Indian decision before its session ended; the FRED key stays on the owner's computer |
+| 10C-2 | (to commit, section 0.1) | 40B step 9a, 4C, 4G, 5A.1, 5B, 5C, ADR-009 | India CPI/IIP/GDP from MoSPI (current decisions only); market calendars XNYS/XTKS/XBOM set aside closes repeated on closed days |
 
 Acceptance records with exact claims, not-claimed items and negative assertions are in
-`stages/STAGE_*_acceptance.yaml` (statuses such as ACCEPTED_NEWS_EXTERNAL_BASELINE for
-Stage 10 and ACCEPTED_REGULATOR_RELEASES_BASELINE for 10B).
+`stages/STAGE_*_acceptance.yaml` (20 files after 10C-2; statuses such as
+ACCEPTED_MACRO_CONTEXT_BASELINE for 10C and ACCEPTED_INDIA_MACRO_AND_CALENDARS_BASELINE
+for 10C-2). `core/status.load_acceptance_records` checks them in the tests.
 
-## 7. Current state (verified 2026-10-03)
+## 7. Current state (verified 2026-10-04)
 
-- Tests: 393 at Stage 9; 482 after Stage 10; 518 after 10B; 521 after the v2.2.0
-  install. Per file after the install: architecture_baseline 3, stage01 5, stage02 19,
-  stage03 47, stage04a 12, stage04b 27, stage05 30, stage06 31, stage07a 25, stage07b 38,
-  stage07c 45, stage07d 15, stage08 23, stage08b 19, stage08c 10, stage08d 19, stage09 25,
-  stage10 89, stage10b 36, static_rules 3.
-- Schema version 16; migrations 0001-0016 (create source registry, entities,
+- Tests: 393 at Stage 9; 482 after 10; 518 after 10B; 521 after v2.2.0; 632 after 10C;
+  740 after 10C-2. Per file: architecture_baseline 3, stage01 5, stage02 19, stage03 47,
+  stage04a 12, stage04b 27, stage05 30, stage06 31, stage07a 25, stage07b 38, stage07c 45,
+  stage07d 15, stage08 23, stage08b 19, stage08c 10, stage08d 19, stage09 25, stage10 89,
+  stage10b 36, stage10c_macro 111, stage10c2_india_calendars 108, static_rules 3.
+- Schema version 18; migrations 0001-0018 (create source registry, entities,
   source_class, data_trust, pit_facts, historical_universe, market_adapters,
   corporate_actions, corporate_action_files, identity_bridges, financial_results,
-  integrated_filings, revision_corrections, announcements, news, sebi_releases), 32 files.
-- Sources registered (11): nse_bhavcopy_equity, nse_corporate_actions,
-  nse_index_constituents, nse_equity_list, nse_financial_results_index,
-  nse_financial_results_xbrl, nse_integrated_filing_index, nse_integrated_filing_xbrl,
-  nse_announcements, gdelt_doc_news, sebi_rss.
-- Data: 2,594 entities (from EQUITY_L) with 2,593 NSE-symbol aliases; 34 raw files
-  (integrated-filing XBRL 14, bhavcopies 6, integrated-filing listings 4, old results XBRL
-  3, SEBI feed reads 2, announcement listings 2, old results listing 1, equity list 1,
-  corporate actions 1); 13,806 trusted daily prices over 6 trading dates (20-Aug to
-  01-Oct-2026 - far too short for any learning, see step 6a); 380 quarantine rows (kept as
-  history); 1,182 corporate actions; 1 identity bridge (TAALTECH); results listings 5 (old
-  page) + 49 (integrated); 17 results files loaded; 751 fundamental figures (2 stored as
-  missing) - HDFC Life 300, Bajaj Finance 222, HDFC Bank 147, TCS 42, VST Tillers 21,
-  Reliance 19; 5,903 announcement filings forming 5,723 events; 30 SEBI releases from 2
-  reads (03-Oct-2026 12:15 and 15:06 India time - the second found all 30 already
-  present, so no gap warning); GDELT news: 0 (first fetch not run yet); news names: 0
-  recorded (fetch-news records them on first run from config/news_names.yaml).
+  integrated_filings, revision_corrections, announcements, news, sebi_releases,
+  macro_context, india_macro), each with up and down files.
+- Sources registered (14): fred_alfred, gdelt_doc_news, market_calendars,
+  mospi_esankhyiki, nse_announcements, nse_bhavcopy_equity, nse_corporate_actions,
+  nse_equity_list, nse_financial_results_index, nse_financial_results_xbrl,
+  nse_index_constituents, nse_integrated_filing_index, nse_integrated_filing_xbrl,
+  sebi_rss.
+- Data: 2,594 entities (from EQUITY_L) with 2,593 NSE-symbol aliases; 13,806 trusted
+  daily prices over 6 trading dates (20-Aug to 01-Oct-2026 - far too short for any
+  learning, see step 6a); 380 quarantine rows (history); 1,182 corporate actions; 1
+  identity bridge (TAALTECH); results listings 5 (old page) + 49 (integrated); 17 results
+  files loaded; 751 fundamental figures; 5,903 announcement filings forming 5,723 events;
+  SEBI: 30 releases from 2 reads (03-Oct-2026 12:15 and 15:06 India time); GDELT news: 0
+  (first fetch not run yet); FRED: 25 series, 68 responses, 59,971 vintages, 0 problems
+  (first live run 03-Oct 22:01, second 42 minutes later stored nothing new; a run on
+  04-Oct 17:56 found everything already present); MoSPI: 9 series, 5 reads, 15 pages,
+  461 values, 0 problems (04-Oct 17:59).
 - Historical-universe tables exist but hold no versions yet (universe_versions 0).
-- `data/inbox` holds 32 files (all ingested); `data/fetched` holds the 2 SEBI reads;
+- `data/inbox` holds 32 files (all ingested); `data/fetched` holds the SEBI reads, FRED
+  answers (fred_*.json) and MoSPI pages (15 files mospi_<dataset>_<key8>_<UTC stamp>_p<n>.json);
   `data/raw` holds every raw file by sha256; `data/checklist.html` is the download page.
 
 ## 8. Code map
@@ -307,45 +396,52 @@ Stage 10 and ACCEPTED_REGULATOR_RELEASES_BASELINE for 10B).
   load-announcements FILE..., show-events SYMBOL [FROM] [TO],
   fetch-news [--symbols A,B] [--from DATE], show-news SYMBOL [FROM] [TO],
   fetch-sebi, show-sebi [--symbol SYMBOL] [FROM] [TO],
+  fetch-macro [--series A,B] [--full], show-macro [SERIES] (warns when the market
+  calendars end within 60 days), fetch-india [--series A,B], show-india [SERIES],
   ingest-inbox [--without-listing] [FOLDER], checklist [LISTING...] [--symbols A,B]
-  [--since DATE] [--prices-from DATE], report.
+  [--since DATE] [--prices-from DATE], report (has lines for macro and "India macro (MoSPI)").
 - `src/core/` - config, database (`connect`, `migrate`, `rollback`, `run_in_transaction`,
   `now_utc`), dates (`strict_iso_date`), logging_setup, status (2A vocabulary,
   `load_acceptance_records`; status must be a fixed status or ACCEPTED_<X>_BASELINE; every
-  not_claimed and negative_assertions entry must be exactly false).
+  not_claimed and negative_assertions entry must be exactly false), sessions (Stage 10C:
+  `ZONES` America/New_York with US daylight saving from 2007-03-11, Asia/Tokyo +9,
+  Asia/Kolkata +5:30; `utc_offset(zone, day, clock)`, `local_to_utc(day, hhmm, zone)`;
+  refuses times inside a changeover hour and US dates before 2007-03-11), calendars
+  (Stage 10C-2: `Calendar.covers/is_session` - CalendarError outside coverage;
+  `check_calendar`, `load_calendars(path)` -> (calendars, series_calendars), cached by
+  file mtime).
 - `src/data_quality/` - missing_data (`MissingClass`: not_applicable, not_yet_released,
   not_disclosed, extraction_failure, source_conflict, structurally_absent), trust_chain
-  (`NoDataError` ...), extraction_confidence (`ExtractionConfidence`, 4A rule 4:
-  name_in_headline_and_link, name_in_a_list, name_in_headline_only, name_in_link_only,
-  several_companies_named, no_name_found, registered_name_in_title).
+  (`NoDataError` ...), extraction_confidence (`ExtractionConfidence`, 4A rule 4).
 - `src/provenance/` - availability (`disposition(claim, decision_time, retrieved_at,
-  published_at)`, `PitClaim.CURRENT_DECISION/HISTORICAL_REPLAY`, `Availability`,
-  `parse_timestamp` - timezone mandatory), raw_store (`store_raw_artifact`, sha256 dedup -
-  identical bytes raise ArtifactError), pit_store (`record_fact`, `record_correction`,
-  `fact_as_of`; UNITS include INR, INR_per_share, ratio).
-- `src/universe/` - entities (`resolve(conn, identifier, as_of, alias_type=...)`;
-  ALIAS_TYPES nse_symbol, bse_code, vendor_id, company_name, news_name), equity_list,
-  historical_universe, identity_bridges.
-- `src/ingestion/` - source_registry (REQUIRED_FIELDS, ALLOWED_VALUES, excluded source
-  classes private_tip_channel / unattributed_rumour / non_public_information,
-  `sync_sources` never silently changes a registration), market_adapters
-  (`read_raw_table`, providers, `ingest_market_file`, `retry_quarantined`),
-  corporate_actions + nse_corporate_actions (`normalise_name`: lower case, punctuation to
-  spaces, 'limited' -> 'ltd'), nse_financial_results (OLD_INDAS and SEBI_FORMATS
-  IndAS/Banking/NBFC/LI, listings, identities, standalone-only ratios, revisions, `IST`),
-  intake (checklist + ingest-inbox), nse_announcements (filings, `events()`,
-  EVENT_TYPES/REGISTERED_TYPES of 4A.0), gdelt_news (section 9), news_fetch (the only
-  network code, sections 9 and 10.1), sebi_releases (section 9.7).
+  published_at)`, `PitClaim.CURRENT_DECISION/HISTORICAL_REPLAY`, `Availability` ELIGIBLE /
+  NOT_ELIGIBLE / AVAILABILITY_REVIEW, `parse_timestamp` - timezone mandatory), raw_store
+  (`store_raw_artifact`, sha256 dedup - identical bytes raise ArtifactError), pit_store
+  (`record_fact`, `record_correction`, `fact_as_of`).
+- `src/universe/` - entities (`resolve(conn, identifier, as_of, alias_type=...)`),
+  equity_list, historical_universe, identity_bridges.
+- `src/ingestion/` - source_registry (REQUIRED_FIELDS, ALLOWED_VALUES incl. source class
+  official_statistics and licensed_vendor; excluded classes private_tip_channel /
+  unattributed_rumour / non_public_information; `sync_sources` never silently changes a
+  registration), market_adapters, corporate_actions + nse_corporate_actions,
+  nse_financial_results, intake, nse_announcements, gdelt_news (section 9), sebi_releases
+  (9.7), macro_context (section 10), india_macro (section 11), news_fetch (the ONLY
+  network code: GDELT Fetcher, `fetch_sebi`, `fred_key`, `FredClient`,
+  `fetch_macro_series`, `MospiClient`, `fetch_india_request`, `tls_context(host)`,
+  `http_get`, `_check_host`, `_NoRedirect`).
 - `src/features/price_series.py` - raw/adjusted series.
 - Empty packages reserved for later steps: abstention, calibration, experiments, ledger,
   models, regimes, research, targets, validation.
-- `config/` - settings.yaml, sources.yaml (11 sources), news_names.yaml (section 9.2).
-- `stages/` - one acceptance record per stage. `docs/decisions/` - ADR-001..007.
+- `config/` - settings.yaml, sources.yaml (14 sources), news_names.yaml (9.2),
+  macro_series.yaml (25 FRED series), india_macro_series.yaml (9 MoSPI series),
+  market_calendars.yaml (3 calendars + series_calendars mapping).
+- `stages/` - one acceptance record per stage. `docs/decisions/` - ADR-001..009.
+  `docs/third_party/` - exchange_calendars licence.
 
 ## 9. Stage 10 (news from GDELT) and Stage 10B (SEBI) in detail
 
 ### 9.1 Why GDELT
-Commercial Indian news sites forbid AI use or automated reading (rule 9). GDELT's terms:
+Commercial Indian news sites forbid AI use or automated reading (rule 10). GDELT's terms:
 "unlimited and unrestricted use for any academic, commercial, or governmental use of any
 kind without fee", with citation and a link to gdeltproject.org (recorded in the source
 registry). The DOC 2.0 API (article list, JSON) gives per article: url, url_mobile,
@@ -406,27 +502,25 @@ decisions use retrieval time; replay uses available_at.
   missing field, a non-web link, a bad seendate, seen after retrieval, or seen outside the
   requested window (+-15 min). The same link again must agree, else 'article_conflict'.
   A response with 250 articles is recorded as complete=0.
-- Tables (migration 0015): nw_responses (artifact, isin searched, query, window,
-  counts, complete), nw_articles (url UNIQUE, title verbatim, domain, language,
-  source_country, seen_at, available_at), nw_retrievals (which response returned which
-  article), nw_problems, nw_extraction_runs, nw_extractions (role subject / mentioned /
-  unassigned with CHECK constraints tying role and extraction_confidence). All
-  append-only. No investment confidence anywhere (40B step 9 acceptance; static test).
+- Tables (migration 0015): nw_responses, nw_articles (url UNIQUE, title verbatim, domain,
+  language, source_country, seen_at, available_at), nw_retrievals, nw_problems,
+  nw_extraction_runs, nw_extractions (role subject / mentioned / unassigned with CHECK
+  constraints tying role and extraction_confidence). All append-only. No investment
+  confidence anywhere (40B step 9 acceptance; static test).
 - Story object (`stories(conn, decision_time, claim, isin)`): story_id, published_at,
   headline, language, copies, companies {isin: role, extraction_confidence, evidence},
   unassigned, searched_for, novelty {copies, sites, rule, repeats_an_exchange_filing:
   not_assessed}, source_quality {source, reliability_rating B, site_quality
   not_assessed}, event_type / direction / materiality / expected_horizon: not_assessed.
-- news_fetch.py: ALLOWED_HOSTS {api.gdeltproject.org, www.sebi.gov.in}; API
-  https://api.gdeltproject.org/api/v2/doc/doc; query per company = its names as quoted
-  phrases joined with OR (no country filter); mode artlist, format json, maxrecords 250,
-  sort datedesc, startdatetime/enddatetime YYYYMMDDHHMMSS; USER_AGENT
-  'ai-equity-agent/1.0 (personal research, non-commercial)'; no redirects
-  (`_NoRedirect`); MIN_INTERVAL 20 s; REFUSAL_WAITS 60, 180, 300 s, then RateLimited and
-  the Fetcher asks nothing more that run (gave_up); a 250-article response is split in two
-  until the window is under 2 hours; SEARCH_WINDOW 90 days; first fetch per company 7
-  days, later from the last stored window end minus 1 day; responses saved as
-  data/fetched/gdelt_<SYMBOL>_<start>_<end>.json and kept as raw artifacts.
+- GDELT fetcher: API https://api.gdeltproject.org/api/v2/doc/doc; query per company = its
+  names as quoted phrases joined with OR (no country filter); mode artlist, format json,
+  maxrecords 250, sort datedesc, startdatetime/enddatetime YYYYMMDDHHMMSS; USER_AGENT
+  'ai-equity-agent/1.0 (personal research, non-commercial)'; no redirects; MIN_INTERVAL
+  20 s; REFUSAL_WAITS 60, 180, 300 s, then RateLimited and nothing more that run
+  (gave_up); a 250-article response is split in two until the window is under 2 hours;
+  SEARCH_WINDOW 90 days; first fetch per company 7 days, later from the last stored window
+  end minus 1 day; responses saved as data/fetched/gdelt_<SYMBOL>_<start>_<end>.json and
+  kept as raw artifacts.
 
 ### 9.6 Stage 10 real-data numbers and verifying the owner's first fetch
 3 real responses fetched 02-Oct-2026 (HDFC Bank 1 week, Reliance Industries 1 week,
@@ -453,28 +547,140 @@ for the run, count nw_responses / nw_articles / nw_extractions by role, list
   overlaps_previous=0 and warns "may have been missed". Availability = this system's
   first read of the release (SEBI gives no time) under both claims; SEBI's date kept as
   stated_date.
-- Rule sb-kinds-1 (SECTION_KINDS): enforcement/orders -> order, event type sebi_order;
+- Rule sb-kinds-1: enforcement/orders -> order, event type sebi_order;
   enforcement/recovery-proceedings -> recovery_proceeding; legal/circulars -> circular;
   media-and-notifications/press-releases -> press_release; anything else -> other.
 - Rule sb-entity-1 (`NameReader`): a listed company is 'named' only when its registered
   name appears word for word (normalise_name: 'Ltd' = 'Limited', case and punctuation
-  ignored; an apostrophe splits a word, so 'Dr Reddys' does not match "Dr. Reddy's");
-  names without a company suffix (PSU banks, LIC, GIC) must appear exactly as registered;
-  longest name wins; a name shared by two registered companies (Taal Tech old/new ISIN,
-  Future Enterprises, GACM, Jain Irrigation) links neither. Extraction confidence
-  registered_name_in_title; role 'named' (target vs subject not assessed).
-- Tables (migration 0016): sb_reads, sb_releases (link UNIQUE, title, stated_date,
-  section, read_id), sb_problems - append-only.
-- `fetch_sebi`: only SEBI_FEED (any other sebi.gov.in address is refused), refuses to send
-  within 60 minutes of the last stored read (SEBI_WAIT), HTTP != 200 -> FetchError,
-  checks the feed before writing data/fetched/sebi_<UTC time>.xml.
-- Real data 03-Oct-2026: 30 items (01-Oct 15, 30-Sep 9, 29-Sep 6), 30 stored, 0 refused;
-  16 orders, 12 recovery proceedings, 1 circular, 1 press release; companies named: SMC
-  Global Securities (adjudication order) and TV Vision (two recovery notices);
-  'Adani Group Companies' and 'Lloyd Enterprises Limited' (not the listed 'Lloyds
-  Enterprises Limited') link nothing.
+  ignored; an apostrophe splits a word); names without a company suffix (PSU banks, LIC,
+  GIC) must appear exactly as registered; longest name wins; a name shared by two
+  registered companies links neither. Extraction confidence registered_name_in_title.
+- Tables (migration 0016): sb_reads, sb_releases (link UNIQUE), sb_problems - append-only.
+- `fetch_sebi`: only SEBI_FEED, refuses to send within 60 minutes of the last stored read,
+  HTTP != 200 -> FetchError, checks the feed before writing data/fetched/sebi_<UTC>.xml.
+- Real data 03-Oct-2026: 30 items, 30 stored, 0 refused; 16 orders, 12 recovery
+  proceedings, 1 circular, 1 press release; companies named: SMC Global Securities and TV
+  Vision; 'Adani Group Companies' and 'Lloyd Enterprises Limited' link nothing.
 
-## 10. Architecture v2.2.0 (ADR-007) - what changed and why
+## 10. Stage 10C (FRED/ALFRED macro context, ADR-008) in detail - committed 36450db
+
+- Owner decisions: FRED first, India next; approve FRED (ADR-008); the key lives in a
+  Windows user environment variable `FRED_API_KEY`. During setup the owner saw a blank
+  "key" output and could not get "FRED key OK"; it was solved with a diagnostic and an
+  explanation (a user variable is seen only by PowerShell windows opened after it was
+  set). Never print the key - only whether it is present.
+- 25 series (config/macro_series.yaml, each with 3G group, region, kind market_close or
+  published_statistic, market, calendar, time zone, session close for market closes,
+  frequency, FRED units, licence note):
+  rates_and_bonds DGS2, DGS10, T10Y2Y, DFF, ECBDFR, INDIRLTLT01STM (India 10Y, monthly),
+  IRLTLT01JPM156N (Japan 10Y, monthly); currencies DEXINUS, DTWEXBGS, DEXCHUS, DEXJPUS;
+  commodities DCOILBRENTEU, DCOILWTICO, DHHNGSP, PCOPPUSDM, PALUMUSDM; world equity
+  NASDAQCOM, NIKKEI225; volatility and credit VIXCLS, VXEEMCLS, BAMLH0A0HYM2,
+  BAMLEMCBPIOAS; US releases CPIAUCSL, PAYEMS, GDPC1. EXCLUDED_SERIES SP500, DJIA, DJCA,
+  DJTA, DJUA (S&P Dow Jones Indices forbids reproduction; SP500 also has no ALFRED vintages).
+- macro_context.py: `sync_series` (recorded once, never silently changed), `request_for`
+  (daily series: rolling 3-year real-time window - FRED allows 2,000 vintage dates per
+  answer, DGS10 has 5,122; monthly/quarterly: all vintages from 1776-07-04; LOOKBACK 45
+  days daily, 90 weekly, 6 years monthly/quarterly; `--full` asks everything),
+  `read_observations`, `read_series_meta`, `load_fred_answers`, `observations`, `latest`,
+  `value_on`; `FRED_NOTICE` (printed by fetch-macro/show-macro and in README.md).
+- Proof of availability: current decisions use this system's read; historical replay
+  uses FRED's own `last_updated` read right AFTER the observations (proven = min(last
+  updated, our read)); ALFRED vintage dates are kept but not used as proof. A market close
+  is not available before its session close in its own zone converted to UTC.
+- Missing values: a date FRED lists with "." is structurally absent; weekends of business
+  day series structurally absent; later dates not yet released; nothing carried forward.
+- Tables (migration 0017): mc_series, mc_responses, mc_vintages, mc_problems - append-only.
+- Fetcher: only https://api.stlouisfed.org/fred/series/observations and /fred/series,
+  observations first, FRED_INTERVAL 1 s, stops after HTTP 429; the key never reaches the
+  DB, files, logs or messages (`_shown` masks it; an answer containing it is not stored).
+- Real data: see stages/STAGE_10C_acceptance.yaml (first live run 03-Oct 22:01: 25/25
+  series, 50 requests, 59,971 vintages over 50,190 dates 2006-01-01..2026-10-02, 1,624
+  dates without a value, 0 refused, 0 conflicts; second run stored nothing new).
+- Not claimed (10C): whether a "." date was a closed market or a late value; replay of
+  values older than our first read; Shanghai, Hang Seng, EM index, GIFT Nifty, gold, steel;
+  revisions older than the look-back unless --full; early-close times; macro exposure
+  features and regime states; US release consensus/surprise.
+
+## 11. Stage 10C-2 (MoSPI India macro + market calendars, ADR-009) in detail - installed, to commit
+
+- Owner decisions (04-Oct-2026): no academic affiliation; MoSPI samples approved (~12
+  requests); MoSPI approved as the 4th host (ADR-009) with legacy TLS for that host only;
+  scope "Calendars + CPI/IIP/GDP" (WPI held; India VIX/Nifty wait for NSE).
+- MoSPI eSankhyiki API: base https://api.mospi.gov.in, no key, paged JSON
+  {data, meta_data (paging and totals), statusCode}. Paths used:
+  cpi /api/cpi/getCPIData, iip /api/iip/getIipData, nas /api/nas/getNASData. Terms:
+  MoSPI's own datasets are Category A under the Government Statistics Data Dissemination
+  policy 2026 - reuse with prominent attribution ("Source: Ministry of Statistics and
+  Programme Implementation (MoSPI), National Statistics Office - eSankhyiki", printed by
+  fetch-india/show-india and in README.md). WPI belongs to the Office of the Economic
+  Adviser (DPIIT) whose site publishes no reuse terms - not used. MoSPI's own sample code
+  switches certificate checking off - NOT copied. The server needs TLS legacy
+  renegotiation: `tls_context(host)` = `ssl.create_default_context()` plus
+  `OP_LEGACY_SERVER_CONNECT` for api.mospi.gov.in only.
+- 9 series in 5 requests (config/india_macro_series.yaml; each entry: series_id, dataset,
+  request params, `expect` fields that every row must match, `select` fields that pick the
+  aggregate row among breakdown rows, measure, unit, base, reconstructed flag):
+  - CPI base 2024, Current (state 1 = All India, sector 3 = Combined, division 0 = General):
+    IN_CPI24_GEN_INDEX, IN_CPI24_GEN_INFL (select group null).
+  - CPI base 2024, Back series 2013-2024 (reconstructed by MoSPI on the new base; must be
+    declared reconstructed): IN_CPI24B_GEN_INDEX, IN_CPI24B_GEN_INFL.
+  - IIP base 2022-23 General (category 4, select sub_category ""): IN_IIP2223_GEN_INDEX,
+    IN_IIP2223_GEN_GROWTH.
+  - IIP Sectoral (category 2 = Manufacturing; 984 rows incl. 23 sub-industries):
+    IN_IIP2223_MFG_INDEX.
+  - NAS base 2022-23 quarterly, indicator 5 (GDP), expect unit "\u20b9 Crore" (YAML
+    escape - keep the file ASCII): IN_GDP2223_Q_REAL, IN_GDP2223_Q_NOMINAL. Quarters are
+    financial-year quarters: Q1 of FY 2026-27 is dated 2026-04-01.
+  - Dropped: CPI food inflation (that request returns 44 pages; MAX_PAGES 20 refuses it) -
+    needs a narrower filter.
+- india_macro.py: SOURCE_ID mospi_esankhyiki; API_PATHS; PAGE_SIZE 100; MAX_PAGES 20;
+  `check_entry`, `sync_india_series`, `india_series_info`, `registered_india_series`,
+  `requests_to_fetch`, `page_params`, `read_page`, `period_of`, `_keep_page` (identical
+  artifact reused; another source's identical file refused), `load_mospi_pages(conn,
+  dataset, request, pages, raw_dir)`: totals checked across pages; any row breaking
+  `expect` refuses the whole answer; a null measure (no year-on-year rate in a base's first
+  year) is counted as values_not_given, never stored; problems period_conflict,
+  row_refused, no_aggregate_row; a changed value is a new vintage; a read is dated by its
+  LAST page's retrieval. `india_observations` (historical replay returns [] -
+  AVAILABILITY_REVIEW, no publication time) and `india_latest` (status published or
+  reconstructed).
+- Tables (migration 0018): mo_series (with row_select), mo_reads, mo_pages, mo_values,
+  mo_problems - append-only triggers.
+- Fetcher: `MospiClient`, `fetch_india_request` - asks only the 3 paths, MOSPI_INTERVAL
+  3 s, reads ALL pages and checks them before writing anything, refuses > 20 pages, stops
+  after HTTP 429; files data/fetched/mospi_<dataset>_<key8>_<stamp>_p<n>.json (key8 =
+  first 8 hex of sha256 of the sorted request JSON).
+- Market calendars (core/calendars.py, config/market_calendars.yaml): generated from
+  exchange_calendars 4.13.2 (Apache-2.0) for XNYS (New York, 197 closed weekdays), XTKS
+  (Tokyo, 342) and XBOM (NSE/BSE, 306; weekend sessions 2024-01-20 and 2025-02-01),
+  coverage 2006-01-01 to 2026-12-31; outside coverage CalendarError (never guessed).
+  series_calendars: NASDAQCOM -> XNYS, NIKKEI225 -> XTKS. For mapped series (in
+  macro_context `_calendar_for`, `_by_calendar`, `_known_at`, `value_on`): a value on a
+  closed day becomes structurally absent (not used; the stored vintage stays as FRED gave
+  it); no value on a trading day is a source conflict. NOT mapped on purpose: Treasury
+  yields (bond-market calendar: closed Columbus and Veterans Day, open Good Friday) and VIX
+  (Cboe computes it on some US holidays).
+- Calendar checks on real data: NSE's official 2026 holiday list agrees 16 of 16; FRED's
+  Nasdaq 2016-2026 agrees on 102 of 103 closed days, Nikkei 180 of 181 - the exceptions
+  Good Friday 19-Apr-2019 and the Tokyo outage of 1-Oct-2020 carry the previous close
+  repeated and are now set aside. On the owner's history (2,805 Nasdaq and 2,806 Nikkei
+  dates) exactly those two closes are set aside and no trading day lacks a value.
+- Regenerating calendars (before 2026-12-31; show-macro warns 60 days before): with the
+  scratch venv `C:\Users\nalin\AppData\Local\Temp\xcal` run
+  `data\handover\tools\make_calendar_yaml.py <output path>` (edit START/END), then
+  `tools\check_calendars.py` and `tools\make_calendars.py` for the CSV research copies,
+  then hand over the new config file as a normal stage change with tests.
+- Tests 108 (tests/test_stage10c2_india_calendars.py); faults 58/58; acceptance record
+  stages/STAGE_10C2_acceptance.yaml (status ACCEPTED_INDIA_MACRO_AND_CALENDARS_BASELINE;
+  proven incl. real data; not_claimed: food inflation, WPI and RBI, CPI base 2012,
+  India VIX and Nifty, MoSPI publication times, Cboe/US bond/Shanghai/Hong Kong
+  calendars, calendars beyond 2026-12-31, early-close times; 9 negative assertions).
+- Live values (04-Oct-2026): CPI Aug-2026 index 108.74, inflation 4.82; CPI back series to
+  Dec-2024 102.90 / 5.22 (reconstructed); IIP Aug-2026 123.3, growth 8.0, manufacturing
+  126.6; GDP Apr-Jun 2026 8,136,153 crore real and 8,826,871 crore nominal.
+
+## 12. Architecture v2.2.0 (ADR-007) - what changed and why
 
 The owner asked whether the model considers everything that moves Indian stocks and
 whether it can give buy/hold/sell with expected percentage gains and keep improving. A
@@ -486,23 +692,21 @@ predecessor codebase. Changes (all insertions):
 
 | ACR | Change | Section |
 |---|---|---|
-| 103 | Global and India macro context: rates and bonds (US 2Y/10Y, Fed, India 10Y G-sec, RBI repo and liquidity, Japan/euro rates), currencies (USD/INR, dollar index, CNY, JPY), commodities (Brent/WTI, gas, gold, copper, aluminium, steel inputs, agri), world equity markets (S&P 500, Nasdaq, Nikkei, Shanghai, Hang Seng, EM, GIFT Nifty), volatility and credit stress (VIX, India VIX, US high-yield spreads), economic releases (India CPI/WPI/IIP/GDP/GST/PMI, US CPI/payrolls/GDP, China), investor flows (FPI/FII, DII), monsoon, Budget, elections, MSCI/FTSE reviews. Context, never covered securities or benchmarks; two routes only (regime state, or measured company sensitivity) | 3B rule 4, new 3G |
+| 103 | Global and India macro context: rates and bonds, currencies, commodities, world equity markets, volatility and credit stress, economic releases (India CPI/WPI/IIP/GDP/GST/PMI, US CPI/payrolls/GDP, China), investor flows (FPI/FII, DII), monsoon, Budget, elections, MSCI/FTSE reviews. Context, never covered securities or benchmarks; two routes only (regime state, or measured company sensitivity) | 3B rule 4, new 3G |
 | 104 | Cross-market timing: every series carries exchange, session calendar, time zone, publication time; available_at in UTC, never the calendar date; a closed foreign market is `structurally_absent`, never carried forward | new 5C |
 | 105 | New event groups: monetary policy and rates; fiscal, trade and regulation; sovereign and macro data; geopolitics and shocks; index-provider and flow events. Rule 5: an event without an issuer reaches a security only by declared read-across, sector membership or measured sensitivity, recorded | 4A.0, 4A rule 5 |
 | 106 | Macro exposure feature = measured company sensitivity x observed factor move, admitted as a Fundamental-family feature; raw macro levels stay routing-only | 9A, 9C |
 | 107 | Regime engine: global risk appetite, US dollar and rates direction, commodity shock, foreign-flow state, geopolitical stress | 29 |
-| 108 | New 40B steps before step 11: 6a price-history acquisition, 9a macro context, 9b macro and geopolitical events, 9c aggregate investor flows; built to a current-decision baseline first; 3F records the accepted delay of the effective-N clock | 40B, 3F |
-| 109 | Data acquisition and network policy: terms first, free/official first, paid only on owner approval, no scraping, one network module with allow-list and no redirects, secrets never in chat/repo/logs/URLs/errors, every response kept, versioned acquisition contracts, excluded and display-only sources stay out | new 4G |
-| 110 | Return forecasts: per registered horizon P(gain), P(outperform), absolute and excess return ranges (10/25/50/75/90th percentiles after costs), decision BUY/HOLD/SELL/ABSTAIN, invalidation condition; scored by pinball loss and CRPS, calibrated by interval coverage (10-90 range must hold the outcome ~80% of the time); a failing range is withheld; the decision rule is a preregistered human-owned artifact with owner-set thresholds; factor exposure labelled; improvement measured on live-origin calibration only | new 7A, 16, 18, 21 (return_quantiles, decision_rule_version, cost_model_version), 36, 37 (items 21-24) |
+| 108 | New 40B steps before step 11: 6a price-history acquisition, 9a macro context, 9b macro and geopolitical events, 9c aggregate investor flows; current-decision baseline first; 3F records the accepted delay of the effective-N clock | 40B, 3F |
+| 109 | Data acquisition and network policy: terms first, free/official first, paid only on owner approval, no scraping, one network module with allow-list and no redirects, secrets never in chat/repo/logs/URLs/errors, every response kept, versioned acquisition contracts | new 4G |
+| 110 | Return forecasts: per horizon P(gain), P(outperform), absolute and excess return ranges (10/25/50/75/90th percentiles after costs), BUY/HOLD/SELL/ABSTAIN, invalidation condition; pinball loss and CRPS; interval coverage (10-90 range must hold the outcome ~80% of the time); a failing range is withheld; preregistered human-owned decision rule with owner-set thresholds | new 7A, 16, 18, 21, 36, 37 |
 | 111 | Purpose and use: research for the owner's own decisions, never distributed as advice | 3 |
-| 112 | 40C / "Current implementation position (v2.1.1)" describe the predecessor codebase; a new closing note gives this repository's position | 40C, end |
+| 112 | 40C / "Current implementation position (v2.1.1)" describe the predecessor codebase | 40C, end |
 | 113 | Acceptance criteria 90-104 and guardrails 17-20 | 47, 47A |
 
-Control audit: 4,152 -> 4,453 lines; 303 inserted, 0 deleted; replaced only the version
-line and '5. This document is **frozen at v2.2.0** (previously v2.1.1).'; all 210
-headings, every ACR id and criteria 1-89 kept. `tests/test_architecture_baseline.py`
-re-runs the audit, checks criteria are exactly 1..104, and checks README.md and this file
-name the v2.2.0 document. The build/audit/PDF scripts are in `data\handover\tools`
+Control audit: 4,152 -> 4,453 lines; 303 inserted, 0 deleted. `tests/test_architecture_baseline.py`
+re-runs the audit, checks criteria are exactly 1..104, and checks README.md and
+docs/HANDOFF.md name the v2.2.0 document. Build/audit/PDF scripts: `data\handover\tools`
 (build_v220.py, audit_v220.py, md2html.py).
 
 What the owner was told and must keep being told honestly: the design produces
@@ -511,135 +715,128 @@ improves only when live calibration improves; nothing predicts anything until ye
 price history exist (we have 6 weeks); profit is not guaranteed and "found no edge,
 abstained" counts as success (49A); the assistant is not a licensed adviser.
 
-## 11. Data-source research already done (do not repeat)
+## 13. Data-source research already done (do not repeat)
 
-### 11.1 Exchange, brokers, vendors (2026-10-02)
-- NSE Terms of Use forbid automated collection (checked 2026-10-02). robots.txt allows
-  crawling but the terms bind the user.
+### 13.1 Exchange, brokers, vendors (2026-10-02)
+- NSE Terms of Use forbid automated collection. robots.txt allows crawling but the terms
+  bind the user.
 - Free official route for history: SEBI circular of 20-Dec-2024 - exchanges share data
-  for research (up to 2 GB/researcher/year free; academic, non-commercial) via a request
-  form to nseri@nse.co.in (BSE has its own form). The assistant offered to draft it.
+  for research via a request form to nseri@nse.co.in (BSE has its own form). Limit
+  CROSS-VERIFIED 03/04-Oct-2026: 2 GB per researcher per YEAR (not per day), free;
+  non-commercial.
 - NSE paid: EOD Corporate Announcement product Rs 5,00,000/yr (SFTP); real-time
   corporate data Rs 10,60,000/yr.
-- Broker APIs: Zerodha staff say Kite Connect is "purely an execution platform" and
-  point data users to authorised vendors; static-IP whitelisting applies only to order
-  APIs. Groww API (Rs 499/month) history only from 2020, adjustment unclear. Fyers and
-  Upstox advertise free history; Dhan Rs 499/month.
-- Authorised Indian vendors: TrueData (has a Corporate & Fundamental Data API - ask for
-  a quote and whether it gives basis and dissemination times), Global Datafeeds,
-  Accord Fintech (ACE Equity). Trendlyne Rs 299/month AI-tool plan has too few calls.
-- Global: Twelve Data Pro (~$229/month, verified on its exchange list: NSE/BSE, US,
-  Tokyo, Shanghai/Shenzhen, forex, fundamentals; personal use); FMP Ultimate (~$99/month
-  annual; India/Japan/China coverage not confirmed); EODHD does NOT list Indian or Tokyo
-  exchanges and says its prices are indicative. Official free sources: SEC EDGAR (US),
-  J-Quants (Japan, by JPX), filings.xbrl.org (Europe annual), ECB and FRED (FX/macro).
-- Recommendation given: hand downloads + checklist for the 30-company cohort; NSE research
-  request for history; authorised vendor quote for scale later.
+- Broker APIs: Zerodha Kite Connect is "purely an execution platform"; Groww API
+  (Rs 499/month) history only from 2020; Fyers and Upstox advertise free history; Dhan
+  Rs 499/month. (Broker data terms usually forbid storage/redistribution - check first.)
+- Authorised Indian vendors: TrueData, Global Datafeeds, Accord Fintech (ACE Equity).
+  Trendlyne Rs 299/month AI-tool plan has too few calls.
+- Global: Twelve Data Pro (~$229/month; NSE/BSE, US, Tokyo, Shanghai/Shenzhen, forex,
+  fundamentals; personal use); FMP Ultimate (~$99/month annual); EODHD does NOT list
+  Indian or Tokyo exchanges. Official free: SEC EDGAR, J-Quants (JPX), filings.xbrl.org,
+  ECB, FRED.
 
-### 11.2 News and regulators (2026-10-02/03)
-- Business Standard terms: no automated collection, no caching/archiving, no use in any
-  AI/ML system including grounding and RAG. HT Digital (Hindustan Times, Mint): no AI/ML
-  use without a written licence, RSS feeds included. Economic Times: the browser and
-  WebFetch are blocked from it. Moneycontrol: terms not read; treated as not allowed.
-- GDELT: open data, any use with citation; DOC API last 3 months, 250 articles per call,
-  'Please limit requests to one every 5 seconds' (enforced much more strictly in
-  practice); GDELT bulk files and Google BigQuery hold older history (BigQuery free tier
-  1 TB/month, needs a Google Cloud account).
-- Paid news APIs (terms on storage and AI use NOT yet checked): Marketaux free 100
-  requests/day x 3 articles, $29/49/99/199 per month; NewsData.io free 200 credits/day
-  (12-hour delay, production use advertised), $199.99/349.99/1,299.99 per month;
-  NewsAPI.org free plan for development only, $449/month business.
-- PIB: material may be reproduced free of charge without prior approval, with prominent
-  acknowledgement, not in a misleading context; third-party material excluded.
-- SEBI: website policy as in 9.7; RSS page https://www.sebi.gov.in/rss.html.
-- RBI: website terms - "caching and links to, and the framing of this Web Site or any of
-  the contents are prohibited"; home page may be linked on written notice; internal pages
-  need RBI's written permission. RBI's server answers HTTP 418 to AI tools by user agent
-  but 200 to an honest program user agent. Feeds exist (pressreleases_rss.xml - 10 items
-  with times but no timezone; notifications_rss.xml) - NOT used (ADR-006). The owner chose
-  to skip RBI; a permission letter could be drafted later.
+### 13.2 News and regulators (2026-10-02/03)
+- Business Standard: no automated collection, no caching, no AI/ML use incl. RAG. HT
+  Digital (HT, Mint): no AI/ML use without written licence, RSS included. Economic Times:
+  blocked. Moneycontrol: treated as not allowed.
+- GDELT: open data, any use with citation; DOC API last 3 months, 250 articles per call;
+  GDELT bulk files and Google BigQuery hold older history.
+- Paid news APIs (terms on storage and AI use NOT yet checked): Marketaux, NewsData.io,
+  NewsAPI.org (business $449/month).
+- PIB: material may be reproduced free with prominent acknowledgement, not misleadingly.
+- RBI: terms forbid caching and linking without written permission - NOT used (ADR-006).
 
-### 11.3 Alpha Vantage (2026-10-03)
-- Terms (PDF at alphavantage.co/terms_of_service, opened in the browser it downloads):
-  free key for individual, non-commercial use; "commercial" = using it for a firm,
-  providing information to others, or financial-industry affiliation - none applies. No
-  clause on storage or AI use found in the readable text (extraction was partial). AV
-  markets its news for training LLMs.
-- Free key 25 requests/day; premium $49.99/99.99/149.99/199.99/249.99 per month (75 to
-  1,200 requests/min), annual about 2 months off.
-- NEWS_SENTIMENT: tickers, topics, time_from/time_to (YYYYMMDDTHHMM), sort, limit up to
-  1000; fields title, url, time_published, authors, summary, banner_image, source,
-  category_within_source, source_domain, topics with relevance, overall_sentiment_score
-  and label, ticker_sentiment (ticker, relevance_score, ticker_sentiment_score, label);
-  labels: <= -0.35 Bearish, -0.35..-0.15 Somewhat-Bearish, -0.15..0.15 Neutral,
-  0.15..0.35 Somewhat_Bullish, >= 0.35 Bullish. The AAPL demo returned mostly US/Canada
-  sites (MarketBeat, Investing.com Canada, Benzinga, Yahoo Finance, TradingView ...) and
-  a first article about Honeywell - tagging is loose. Several tickers in one call mean
-  "mentions all of them", so one call per company.
-- Also: FX (CURRENCY_EXCHANGE_RATE, FX_DAILY), commodities (WTI, Brent, natural gas,
-  gold/silver spot, copper, wheat ...), US economic indicators (REAL_GDP, TREASURY_YIELD,
-  FEDERAL_FUNDS_RATE, CPI ... - sourced from FRED, FRED terms apply), index data (S&P 500,
-  Nasdaq, Dow, VIX, Russell, others) and options on PREMIUM only, earnings-call
-  transcripts, US insider transactions.
-- Probe NOT run yet. Script: `data\handover\tools\av_probe.py` (5 requests 20 s apart:
-  HDB, INFY, RELIANCE.BSE, TCS.BSE, topics=financial_markets; reads the key from
-  ALPHAVANTAGE_API_KEY, never prints or saves it; saves answers to
-  `data\handover\tools\av_samples\`). Owner commands:
+### 13.3 Alpha Vantage (2026-10-03)
+- Free key for individual non-commercial use; 25 requests/day; premium $49.99-249.99/month.
+- NEWS_SENTIMENT fields and labels: see av_terms.txt; one call per company; tagging loose.
+- Probe NOT run yet: `data\handover\tools\av_probe.py` (5 requests 20 s apart; key from
+  ALPHAVANTAGE_API_KEY, never printed; answers to `data\handover\tools\av_samples\`). Owner:
   `$env:ALPHAVANTAGE_API_KEY = Read-Host "Alpha Vantage key"` then
-  `python data\handover\tools\av_probe.py`, then reply "probed".
+  `python data\handover\tools\av_probe.py`, reply "probed".
 
-### 11.4 Macro sources (2026-10-03, for Stages 10C-10E)
-- FRED API: free key; ALFRED keeps every vintage (realtime_start / realtime_end) - the
-  answer to 5A.1 and 3G rule 1; series copyrighted by third parties (e.g. S&P 500, Nikkei
-  225) may be used for personal non-commercial use without permission. Candidate series:
-  DGS2, DGS10, DFF, T10Y2Y, DCOILBRENTEU, DCOILWTICO, DEXINUS, DEXCHUS, DEXJPUS,
-  DTWEXBGS, VIXCLS, BAMLH0A0HYM2, SP500, NASDAQCOM, NIKKEI225, plus India monthly series
-  (CPI, policy rate, 10Y yield) - to be confirmed on FRED in the Stage 10C research step.
-- MoSPI eSankhyiki API (CPI, WPI, IIP, GDP and more): no key, government data; terms to
-  record (Government Open Data License expected - check).
-- FBIL (USD/INR reference rate, G-sec and T-bill benchmarks, MIBOR): terms to check.
-- FPI/FII flows: NSDL publishes daily FPI investment data (since June 2014), also CDSL
-  and SEBI's FPI statistics pages; NSE publishes provisional FII/DII cash-market figures
-  (hand download only - NSE terms). NSDL terms to check.
-- Not yet researched: GIFT Nifty data (NSE IX), India VIX history (NSE, by hand), MSCI
-  announcements, IMD monsoon data, China data sources, sovereign rating feeds (licensed;
-  use news).
+### 13.4 Macro sources
+- FRED/ALFRED: built in Stage 10C (section 10). Personal non-commercial use of third-party
+  copyrighted series allowed except where the owner forbids (S&P Dow Jones Indices).
+- MoSPI eSankhyiki: built in Stage 10C-2 (section 11). It also serves WPI (not MoSPI's -
+  DPIIT terms unknown, not used) and CPI base 2012 (with provisional/final marks - not
+  built yet).
+- FBIL (USD/INR reference rate, G-sec/T-bill benchmarks, MIBOR): terms to check.
+- FPI/FII flows (Stage 10E): NSDL publishes daily FPI investment (since Dec-1999 per the
+  BAC-Brindco/nsdl-fpi catalogue; fortnightly sector data since 2011), CDSL, SEBI FPI
+  pages; NSE provisional FII/DII cash-market figures (hand download only - NSE terms).
+  NSDL terms to check FIRST.
+- Not yet researched: GIFT Nifty (NSE IX), MSCI announcements, IMD monsoon data (imdlib,
+  check IMD terms), China sources, sovereign ratings (licensed; use news).
 
-## 12. Roadmap (40B order) and the next step in detail
+### 13.5 GitHub / Hugging Face survey (03-Oct-2026) and the licensed-only decision
+Full survey (names AND contents, many queries): `data\handover\research\github_survey_2026-10-03.md`.
+Findings: many repos mirror NSE bhavcopies/index histories copied from NSE (not
+authorised - NSE terms). Usable under their licences: exchange holiday calendars
+(exchange_calendars, Apache-2.0 - used in 10C-2), IIMA Fama-French factors for India
+(check terms), MoSPI's official code as reference only. Method references:
+HaloHunter480/Survivorship-Bias-in-Emerging-Market-Small-Cap-Indices (survivor-only
+backtests overstate Nifty Smallcap 250 returns by 4.94 pp a year), BAC-Brindco/nsdl-fpi
+(NSDL catalogue, for 10E). To check later: captn3m0/india-isin-data (CC0, nightly NSDL
+ISIN snapshots since 2021 - NSDL terms decide), iamsaswata/imdlib (IMD rainfall),
+time-series-of-india/tsoi (RBI/NPCI payments - RBI terms), gtfintechlab/WorldCentralBanks.
+The owner asked whether mirrors could be validated against our own files and used; the
+decision (03-Oct-2026): LICENSED ONLY - mirrors not used even after checks; price history
+via the NSE research request first, then an authorised paid vendor (owner approval with
+price and terms).
 
-Done: steps 1-9 (Stage 7 = step 6; Stage 8/8B/8D = step 7; Stage 9 = step 8; Stages
-10/10B = step 9; 8C = intake tooling). Stage names for v2.2.0 steps: Stage 10C = step 9a,
-10D = 9b, 10E = 9c, Stage 11 = step 10 (sentiment), Stage 7E = step 6a (price history,
-alongside). Then step 11 Knowledge/Event Hub, 12 Real Feature Factory, 13 Real Target
-Engine, 14 Equity Research Agent v0.1 (first agent), 15 Prediction Ledger, 16 Shadow
+### 13.6 NSE research-data request (drafted 03/04-Oct-2026; owner to send)
+- `data\handover\nse_request\1_form_answers.txt`: answers for each field of NSE's form
+  (owner downloaded the official form), objective (reproducible point-in-time record of
+  NSE equities incl. delisted securities and corporate actions; measure survivorship and
+  look-ahead bias; non-commercial; no redistribution), data sought ticks (U+2713): Daily
+  reports, Monthly reports, Others (CM segment: daily bhavcopy, security-wise deliverable
+  positions, securities available for trading, corporate actions, NIFTY 50 / NIFTY 500 /
+  India VIX history, FII/DII cash-market activity); tick-by-tick left blank; justification.
+- `data\handover\nse_request\2_email_to_nseri.txt`: covering email to nseri@nse.co.in.
+- Risk: eligibility mentions accredited academic institutions; the owner applies as an
+  independent researcher. If refused or too slow: authorised vendor quote (TrueData /
+  Global Datafeeds / Accord), with the owner's approval.
+
+### 13.7 FRED and MoSPI research artefacts
+`data\handover\research\fred_samples\` (owner's probe of 03-Oct: 44 requests),
+`mospi_samples\` (owner-approved samples 03/04-Oct), `mospi_live_2026-10-04\` (15 live
+pages used for the smoke test), `calendars\` (CSV of closed weekdays, weekend sessions,
+non-standard closes per calendar).
+
+## 14. Roadmap (40B order) and the next step in detail
+
+Done: steps 1-9 and 9a (Stage 7 = step 6; Stage 8/8B/8D = step 7; Stage 9 = step 8;
+Stages 10/10B = step 9; 10C/10C-2 = step 9a; 8C = intake tooling). Next: 10D = step 9b,
+10E = 9c, Stage 11 = step 10 (sentiment), Stage 7E = step 6a (price history, alongside,
+waiting on NSE or a vendor). Then step 11 Knowledge/Event Hub, 12 Real Feature Factory,
+13 Real Target Engine, 14 Equity Research Agent v0.1, 15 Prediction Ledger, 16 Shadow
 operation, 17 Outcome Resolver, 18 Error Attribution, 19 Calibration + Abstention,
 20 Decay/Drift, 21 Controlled Self-Learning, 22 Specialist agents, 23 API + Orchestrator.
 
-NEXT: Stage 10C = 40B step 9a, Global and India Macro Context Adapter.
-- Acceptance (40B): "Every series carries session, time zone, publication time and
-  vintages; a foreign close is not available to an Indian decision before it exists (5C)".
-- Read first: 3B (rule 4), 3G, 4G, 5, 5A, 5B, 5C, 9A, 9C, 29, 25A and the 'Changes in
-  v2.2.0' table.
-- Research step (method section 5): confirm each candidate series on FRED (frequency,
-  units, time of observation, release lag, vintage availability in ALFRED, copyright
-  notes); MoSPI API terms and formats; FBIL terms; India VIX and Nifty index files from
-  NSE (hand download). Ask the owner for permission before fetching samples, and ask them
-  to create the FRED key (never pasted in chat).
-- Design notes to carry in: a series registry (series id, source, exchange or
-  publisher, session calendar, time zone, unit, frequency, vintage policy); observations
-  stored with value time (local and UTC), available_at, retrieval time, vintage
-  (realtime_start/end) and raw artifact; missing values classified (closed market ->
-  structurally_absent); the fetcher gains FRED/MoSPI hosts only via a new ADR (ADR-008)
-  and allow-list tests; the key is read from the environment (or an untracked file) only
-  inside news_fetch.py (or a renamed binding, keeping the single-network-module rule and
-  its tests - 40F: prefer binding to rename); FRED key never in stored URLs or errors.
-- After 10C: 10D (macro and geopolitical events - GDELT themes/timelines for conflict,
-  oil, sanctions; PIB; SEBI), 10E (FPI/FII and DII daily flows), then Stage 11 sentiment
-  (Alpha Vantage after the probe; exclude TradingView; 4B: liquidity threshold from
-  trusted_prices, sentiment only over sentiment-eligible 'subject' stories, raw model
-  output kept and never flipped).
+NEXT: Stage 10D = 40B step 9b, Macro and Geopolitical Events.
+- Read first in the architecture: 4A.0 (new event groups: monetary policy and rates;
+  fiscal, trade and regulation; sovereign and macro data; geopolitics and shocks;
+  index-provider and flow events), 4A rule 5 (an event without an issuer reaches a
+  security only by declared read-across, sector membership or measured sensitivity,
+  recorded), 3G, 4B, 4D, 4F.2, 4G, 5B, 5C, 40B step 9b and its acceptance text, 47/47A.
+- Candidate sources (terms first; ask the owner before any new host - it would need an
+  ADR-010 and allow-list change): GDELT (already allowed - DOC API themes/queries for
+  conflict, oil, sanctions, central banks; GDELT Events/GKG bulk files would be new
+  hosts), PIB press releases (reproduction allowed with acknowledgement - check its
+  RSS/feeds and robots), SEBI feed (already in), MoSPI release calendar (scheduled
+  releases as events, not proof of publication time), US/ECB/BoJ central-bank calendars
+  (official sites - terms to check). RBI stays out (ADR-006).
+- Design notes: event registry with group/type from 4A.0, no issuer -> read-across rules
+  declared and recorded; availability from proven first-seen/retrieval; extraction
+  confidence separate from investment confidence; never read article bodies from
+  commercial sites.
+- Then 10E (FPI/FII and DII daily flows - NSDL terms first), then Stage 11 sentiment
+  (Alpha Vantage after the probe; exclude TradingView; 4B rules).
+- Also owed: CPI food inflation with a narrower filter; CPI base 2012; WPI if DPIIT
+  terms allow; India VIX/Nifty after NSE replies; calendars before 2026-12-31.
 
-## 13. NSE real-data findings (the code depends on these)
+## 15. NSE real-data findings (the code depends on these)
 
 Prices / identity:
 - ETFs trade in series EQ with ISIN prefix INF (out of scope, ADR-003).
@@ -651,80 +848,73 @@ Results (old page, periods to Dec-2024): CF-FR listing; INDAS_*.xml in BSE taxon
 - VST Tillers had placeholder zeros for owners/minority profit - stored as source_conflict.
 Results (Integrated Filing - Financials, quarters ended Mar-2025 onwards, SEBI format):
 - listing CSV header cells end with a space and a line break (stripped by read_raw_table);
-- files carry Symbol and ISIN; family is in the in-capmkt-ent namespace
-  (IntegratedFinance_IndAS / Banking / NBFC / LI); taxonomy date varies (2025-01-31, 2026-01-31);
-- bank and insurer consolidated reports carry zeros or copies for regulatory ratios
-  (NPA, CET1, ROA; solvency, persistency) - taken from standalone only;
+- files carry Symbol and ISIN; family in the in-capmkt-ent namespace
+  (IntegratedFinance_IndAS / Banking / NBFC / LI); taxonomy date varies;
+- bank and insurer consolidated reports carry zeros or copies for regulatory ratios -
+  taken from standalone only;
 - March files say both Audited (year) and Unaudited (quarter);
-- a revision row: TYPE OF SUBMISSION "Revision", BROADCAST blank, REVISED DATE/TIME
-  like "24-JUL-2026 16:48:18", REVISION REMARKS text, dissemination = when the revised
-  file went public (HDFC Life, 24-Jul-2026; its P&L figures equal the original).
+- a revision row: TYPE OF SUBMISSION "Revision", BROADCAST blank, REVISED DATE/TIME like
+  "24-JUL-2026 16:48:18", REVISION REMARKS text, dissemination = when the revised file
+  went public.
 - General insurers and other families are refused until checked on real files.
 Announcements (CF-AN-equities-*.csv): columns SYMBOL, COMPANY NAME, SUBJECT, DETAILS,
 BROADCAST DATE/TIME, RECEIPT, DISSEMINATION, DIFFERENCE, ATTACHMENT (no ISIN, no size);
-- attachment link = corporate/UPLOADER_ddmmyyyyhhmmss_originalname;
-- companies file one document several times under different subjects within minutes
-  (HDFC Bank 18-Apr-2026, four filings); generic names (intimation.pdf, a bare symbol)
-  and even specific names are reused for different documents days later;
-- the per-announcement XBRL only repeats the listing fields.
-Registry names (for news and SEBI matching): legal names include ordinary words ('Take
-Solutions', 'Eternal', 'Nile'); 16 have no Limited/Ltd (PSU banks, LIC, GIC,
-'Century Extrusions Limited-RE', 'Federal-Mogul Goetze (India) Limited.'); NSE symbols
-that are ordinary capitalised words include BSE, OIL, ONGC, PSB, INFY, TCS, IDEA.
+attachment link = corporate/UPLOADER_ddmmyyyyhhmmss_originalname; one document filed
+several times under different subjects within minutes; generic file names reused.
+Registry names: legal names include ordinary words ('Take Solutions', 'Eternal',
+'Nile'); 16 have no Limited/Ltd; NSE symbols that are ordinary words include BSE, OIL,
+ONGC, PSB, INFY, TCS, IDEA.
 
-## 14. Open items, deferred work and things NOT claimed
+## 16. Open items, deferred work and things NOT claimed
 
-- Rows refused by an earlier code version cannot be re-read from a stored listing
-  (a later fix needs a re-download with new bytes). Consider a reprocess tool.
-- Per-share figures are not adjusted for bonuses/splits; balance sheet and cash flow
-  not stored; segment results not stored; half-year/nine-month periods not stored.
-- NBFC GS3/AUM and insurer VNB/APE are not in the XBRL files.
-- Announcements: duplicates judged by file name and timing, not PDF bytes; direction,
-  materiality and horizon not assessed; unclassified subjects not read from text;
-  no BSE cross-exchange syndication. 125 announcement rows (52 symbols) were refused:
-  companies not in EQUITY_L.
-- News (Stage 10): headlines only, article text never read; event type, direction,
-  materiality and horizon not assessed; news repeating an exchange filing not recognised;
-  short forms ('Reliance', 'TCS', 'HDFC') and names only in other scripts not matched;
-  'sources say' stories not screened (4F.2); instruction-shaped text not detected or
-  recorded against a source (4D rule 4); site quality not assessed; extraction runs not
-  filtered by decision time; only 6 companies have news names; closing a news name not
-  supported; no older history than GDELT's 3 months.
-- SEBI (Stage 10B): titles only; releases before the first read are missing; whether a
-  named company is the party acted against is not assessed; circulars not linked to
-  sectors; no RBI.
+- Rows refused by an earlier code version cannot be re-read from a stored listing.
+- Per-share figures not adjusted for bonuses/splits; balance sheet, cash flow, segments,
+  half-year/nine-month periods not stored. NBFC GS3/AUM and insurer VNB/APE not in XBRL.
+- Announcements: duplicates by file name and timing; direction/materiality/horizon not
+  assessed; 125 rows (52 symbols) refused - companies not in EQUITY_L.
+- News (Stage 10): headlines only; event type, direction, materiality, horizon not
+  assessed; short forms not matched; only 6 companies have news names; no history older
+  than GDELT's 3 months; first live fetch not run.
+- SEBI (Stage 10B): titles only; releases before the first read missing; no RBI.
+- Macro (10C/10C-2): see the not_claimed lists in stages/STAGE_10C_acceptance.yaml and
+  STAGE_10C2_acceptance.yaml (section 11).
 - Whole system: no sector classification yet (needed by 3G rule 4 and 9B); no 30-company
-  cohort chosen; price history only 6 trading days; universe versions empty; steps 11-23
-  not started; nothing is predicted yet.
+  cohort; price history only 6 trading days; universe versions empty; steps 11-23 not
+  started; nothing is predicted yet.
 
-## 15. Files kept for the next chat (`data\handover\`, git-ignored, on disk)
+## 17. Files kept for the next chat (`data\handover\`, git-ignored, on disk)
 
-- `HANDOFF_new.md` - this file (installed as docs/HANDOFF.md by the installer).
-- `install_v220.py` - checked installer for v2.2.0 + this handoff (section 0.1).
-- `arch220_files\` - docs/Master_Architecture_v2_2_0_FROZEN.md and .pdf,
-  docs/decisions/ADR-007-architecture-v2-2-0.md, tests/test_architecture_baseline.py
-  (the reference copies to diff against after the install).
-- `tools\` - build_v220.py, audit_v220.py, md2html.py (architecture build, audit, PDF);
-  mutate_stage10.py, mutate_stage10b.py (deliberate-fault scripts; edit ROOT to point at a
-  scratch copy); smoke_news.py, smoke_sebi.py, analyse_gdelt.py, analyse_sebi.py (real-data
-  checks on database copies); escape_tests.py (non-ASCII -> \u escapes); pdf_text.py;
-  fetch_gdelt_samples.py (research fetcher, for reference only - do not hammer GDELT);
-  av_probe.py (section 11.3).
-- `research\` - the real samples: gdelt_samples\ (HDFC Bank, Reliance, HDFC Life JSON and
-  the fetch log) and sebi_samples\ (feed read of 03-Oct-2026 with headers), and
-  av_terms.txt (partial text of Alpha Vantage's terms).
+- `HANDOFF_new.md` - this file (copied to docs/HANDOFF.md in the 10C-2 commit).
+- `stage10c2\files\` (10 tested new files), `stage10c2\patch_stage10c2.py` (already run
+  by the owner - a second run STOPs), `stage10c2\patch_stage10c2_record.py` (to run,
+  section 0.1).
+- `stage10c\` - Stage 10C files, patch_stage10c.py and patch_stage10c_record.py (all done).
+- `install_v220.py`, `arch220_files\` - v2.2.0 install (done).
+- `nse_request\` - 1_form_answers.txt, 2_email_to_nseri.txt (section 13.6).
+- `tools\` - build_v220.py, audit_v220.py, md2html.py, pdf_text.py, escape_tests.py;
+  mutate_stage10.py, mutate_stage10b.py, mutate_stage10c.py, mutate_stage10c2.py
+  (usage: `<venv python> mutate_stageX.py <scratch repo root>`); smoke_news.py,
+  smoke_sebi.py, smoke_macro.py, smoke_10c2.py (real-data checks on a database copy:
+  `<venv python> smoke_X.py <scratch repo root>`); analyse_gdelt.py, analyse_sebi.py;
+  fetch_gdelt_samples.py (reference only); av_probe.py; fred_probe.py; mospi_probe.py
+  (research probes, owner-approved); make_calendars.py, make_calendar_yaml.py,
+  check_calendars.py (calendar generation and checks - need the xcal venv).
+- `research\` - gdelt_samples, sebi_samples, fred_samples, mospi_samples,
+  mospi_live_2026-10-04, calendars, av_terms.txt, github_survey_2026-10-03.md.
+- Outside the repo: `C:\Users\nalin\AppData\Local\Temp\xcal` (exchange_calendars venv,
+  143 MB; delete after the 10C-2 commit unless the owner wants it kept).
 
-## 16. How to start the new chat
+## 18. How to start the new chat
 
 Paste this to the new chat:
 
 > I am continuing my AI equity research agent project at
 > C:\Users\nalin\Projects\ai-equity-agent. Please read docs/HANDOFF.md fully first (if
-> data\handover\HANDOFF_new.md is newer or the v2.2.0 architecture is missing from docs,
-> read that one and finish its section 0.1 first), then the frozen architecture
+> data\handover\HANDOFF_new.md is newer, read that one), then the frozen architecture
 > docs/Master_Architecture_v2_2_0_FROZEN.md sections named there. Verify the current state
-> (git log, tests, database version 16, CI), then continue with Stage 10C (architecture
-> 40B step 9a, Global and India Macro Context) using the same step-by-step method:
-> research real data first, build and test in a scratch copy, give me paste blocks and
-> commands, and verify after I reply "done". Tell me in advance whenever you need an API
-> key and from which source - free options first.
+> (git log, tests 740, database version 18, CI). If the Stage 10C-2 commit is not made
+> yet, take me through section 0.1 of the handoff and verify; then continue with Stage 10D
+> (architecture 40B step 9b, Macro and Geopolitical Events) using the same step-by-step
+> method: research real data first, build and test in a scratch copy, give me paste
+> blocks and commands, and verify after I reply "done". Tell me in advance whenever you
+> need an API key and from which source - free options first.

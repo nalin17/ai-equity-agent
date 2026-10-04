@@ -1,0 +1,144 @@
+# India macro context from MoSPI's eSankhyiki API (architecture 3G, 5A.1, 5B, 5C rule 3; ADR-009). Human-owned.
+# Context for Indian equities - never a covered security, a target or a benchmark (3G rule 2), and never a
+# buy or sell signal on its own (3G rule 3).
+#
+# Fields:
+#   series_id   our name for one measure of one MoSPI table
+#   dataset     cpi (consumer prices), iip (industrial production) or nas (national accounts)
+#   request     the exact filters sent to MoSPI (paging is added by the fetcher)
+#   expect      fields every returned row must carry - a row that does not match means the filter was not
+#               applied, and the whole answer is refused (4G rule 7)
+#   select      fields that pick the aggregate row from the breakdown rows MoSPI returns with it (for
+#               example manufacturing without its sub-industries); other rows are counted, not stored
+#   measure     the field holding the value
+#   status      published     - figures as MoSPI publishes them now
+#               reconstructed - a back series recalculated after the fact on a newer base: it shows the
+#                               past as known TODAY, so it may support current decisions only and must
+#                               never stand in for what was known at the time (5B.2)
+# MoSPI gives no publication time and no revision marks for these tables: a value counts as known from
+# this system's first read of it (current decisions only); a changed value read later is a new vintage.
+# Base-year changes are breaks: each base is its own series, never spliced.
+# Licence: MoSPI's own datasets, Category A under the Government Statistics Data Dissemination policy 2026 -
+# reuse allowed with prominent attribution. Not used: WPI (compiled by the Office of the Economic Adviser,
+# whose reuse terms are not published) and RBI tables (RBI's terms). Food inflation waits for a narrower
+# filter: MoSPI answers that request with every food group, class and item - 44 pages a day.
+# A year-on-year measure is blank for a base's first year (no earlier value on the same base): MoSPI
+# gives no value, and none is stored.
+# Recorded series are never silently changed: editing or removing one stops fetch-india.
+
+series:
+  # ---- consumer prices, base 2024 (published from January 2025) ----
+  - series_id: IN_CPI24_GEN_INDEX
+    title: India CPI, base 2024, All India, rural+urban, general index
+    group: economic_releases
+    dataset: cpi
+    request: {base_year: "2024", series: Current, state_code: "1", sector_code: "3", division_code: "0"}
+    expect: {base_year: "2024", series: Current, state: All India, sector: Combined, division: CPI (General)}
+    select: {group: null}
+    measure: index
+    unit: index, 2024=100
+    status: published
+    publisher: MoSPI, National Statistics Office - released on the 12th of the following month
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+  - series_id: IN_CPI24_GEN_INFL
+    title: India CPI inflation, base 2024, All India, rural+urban, general, year on year
+    group: economic_releases
+    dataset: cpi
+    request: {base_year: "2024", series: Current, state_code: "1", sector_code: "3", division_code: "0"}
+    expect: {base_year: "2024", series: Current, state: All India, sector: Combined, division: CPI (General)}
+    select: {group: null}
+    measure: inflation
+    unit: percent, year on year
+    status: published
+    publisher: MoSPI, National Statistics Office - released on the 12th of the following month
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+
+  # ---- consumer prices, base 2024 back series (2013-2024, recalculated in 2025) ----
+  - series_id: IN_CPI24B_GEN_INDEX
+    title: India CPI back series on base 2024 (recalculated), All India, rural+urban, general index
+    group: economic_releases
+    dataset: cpi
+    request: {base_year: "2024", series: Back, state_code: "1", sector_code: "3", division_code: "0"}
+    expect: {base_year: "2024", series: Back, state: All India, sector: Combined, division: CPI (General)}
+    select: {group: null}
+    measure: index
+    unit: index, 2024=100
+    status: reconstructed
+    publisher: MoSPI, National Statistics Office - back series published with the 2024 base
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+  - series_id: IN_CPI24B_GEN_INFL
+    title: India CPI inflation back series on base 2024 (recalculated), All India, rural+urban, general
+    group: economic_releases
+    dataset: cpi
+    request: {base_year: "2024", series: Back, state_code: "1", sector_code: "3", division_code: "0"}
+    expect: {base_year: "2024", series: Back, state: All India, sector: Combined, division: CPI (General)}
+    select: {group: null}
+    measure: inflation
+    unit: percent, year on year
+    status: reconstructed
+    publisher: MoSPI, National Statistics Office - back series published with the 2024 base
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+
+  # ---- industrial production, base 2022-23 (from 2023) ----
+  - series_id: IN_IIP2223_GEN_INDEX
+    title: India index of industrial production, base 2022-23, general index
+    group: economic_releases
+    dataset: iip
+    request: {frequency: Monthly, base_year: "2022-23", type: General, category_code: "4"}
+    expect: {base_year: "2022-23", type: General, category: General}
+    select: {sub_category: ""}
+    measure: index
+    unit: index, 2022-23=100
+    status: published
+    publisher: MoSPI, National Statistics Office - released on the 28th of the following month
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+  - series_id: IN_IIP2223_GEN_GROWTH
+    title: India industrial production growth, base 2022-23, general, year on year
+    group: economic_releases
+    dataset: iip
+    request: {frequency: Monthly, base_year: "2022-23", type: General, category_code: "4"}
+    expect: {base_year: "2022-23", type: General, category: General}
+    select: {sub_category: ""}
+    measure: growth_rate
+    unit: percent, year on year
+    status: published
+    publisher: MoSPI, National Statistics Office - released on the 28th of the following month
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+  - series_id: IN_IIP2223_MFG_INDEX
+    title: India index of industrial production, base 2022-23, manufacturing
+    group: economic_releases
+    dataset: iip
+    request: {frequency: Monthly, base_year: "2022-23", type: Sectoral, category_code: "2"}
+    expect: {base_year: "2022-23", type: Sectoral, category: Manufacturing}
+    select: {sub_category: ""}
+    measure: index
+    unit: index, 2022-23=100
+    status: published
+    publisher: MoSPI, National Statistics Office - released on the 28th of the following month
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+
+  # ---- national accounts, base 2022-23, quarterly (financial-year quarters) ----
+  - series_id: IN_GDP2223_Q_REAL
+    title: India GDP, base 2022-23, quarterly, at constant 2022-23 prices
+    group: economic_releases
+    dataset: nas
+    request: {base_year: "2022-23", series: Current, frequency_code: Quarterly, indicator_code: "5"}
+    expect: {base_year: "2022-23", series: Current, indicator: Gross Domestic Product, frequency: Quarterly, revision: null, unit: "\u20b9 Crore"}
+    select: {}
+    measure: constant_price
+    unit: INR crore, constant 2022-23 prices
+    status: published
+    publisher: MoSPI, National Statistics Office - released at the end of the second month after the quarter
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
+  - series_id: IN_GDP2223_Q_NOMINAL
+    title: India GDP, base 2022-23, quarterly, at current prices
+    group: economic_releases
+    dataset: nas
+    request: {base_year: "2022-23", series: Current, frequency_code: Quarterly, indicator_code: "5"}
+    expect: {base_year: "2022-23", series: Current, indicator: Gross Domestic Product, frequency: Quarterly, revision: null, unit: "\u20b9 Crore"}
+    select: {}
+    measure: current_price
+    unit: INR crore, current prices
+    status: published
+    publisher: MoSPI, National Statistics Office - released at the end of the second month after the quarter
+    licence: GSDD 2026 Category A - reuse allowed with attribution (Source - MoSPI, eSankhyiki)
