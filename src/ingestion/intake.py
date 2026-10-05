@@ -8,7 +8,7 @@ that, and it never contacts any website:
     NSE reuses (the equity list, listings) is kept beside the old one under a content tag;
   - ingest_inbox: load every inbox file not ingested yet, in dependency order - equity
     list, corporate actions, announcements, prices by trade date, results listings, then results files
-    in the order NSE published them. A results file whose listing row is not loaded waits:
+    in the order NSE published them, then FII/DII flow files in the order they were downloaded. A results file whose listing row is not loaded waits:
     once stored without it, its publication time could never be proven (5B);
   - checklist_items / write_checklist: from listings already downloaded, one page of links
     to the results files (and price files for missing weekdays) not in the inbox or database.
@@ -25,6 +25,7 @@ from ingestion.market_adapters import ingest_market_file, read_raw_table
 from ingestion.nse_announcements import load_announcements
 from ingestion.nse_corporate_actions import load_corporate_actions, normalise_name
 from ingestion.nse_financial_results import NSE_ARCHIVE, load_results_index, load_results_xbrl
+from ingestion.nse_flows import load_flows
 from provenance.raw_store import sha256_bytes
 from universe.equity_list import load_equity_list
 
@@ -39,8 +40,9 @@ KINDS = (
     ("prices", re.compile(r"^BhavCopy_NSE_CM_0_0_0_(\d{8})_F_0000\.csv(\.zip)?$"), 4),
     ("results_listing", re.compile(r"^CF-(FR|Integrated-Filing)-.+\.csv$"), 5),
     ("results", re.compile(r"^(INDAS|INTEGRATED_FILING)_[A-Za-z0-9_]+\.xml$"), 6),
+    ("flows", re.compile(r"^fii-dii-(nse|combined)-latest(__[0-9a-f]{8})?\.csv$"), 7),
 )
-REUSED_NAMES = {"equity_list", "corporate_actions", "announcements", "results_listing"}   # NSE reuses these names
+REUSED_NAMES = {"equity_list", "corporate_actions", "announcements", "results_listing", "flows"}   # NSE reuses these names
 LOADERS = {
     "equity_list": load_equity_list,
     "corporate_actions": load_corporate_actions,
@@ -48,6 +50,7 @@ LOADERS = {
     "prices": ingest_market_file,
     "results_listing": load_results_index,
     "results": load_results_xbrl,
+    "flows": load_flows,
 }
 
 
@@ -120,6 +123,8 @@ def ingest_inbox(conn, inbox_dir, raw_dir=None, now=None, require_listing=True):
             files.sort(key=lambda f: f[1].group(1))
         elif kind == "results":
             files.sort(key=lambda f: (_published_order(conn, f[0].name), f[0].name))
+        elif kind == "flows":   # download order only orders the loading; availability is the ingestion (5B)
+            files.sort(key=lambda f: (f[0].stat().st_mtime, f[0].name))
         for path, _ in files:
             if kind == "results" and require_listing and _published_order(conn, path.name) == "~":
                 results.append((path.name, kind, "waiting", "its listing row is not loaded - download the"

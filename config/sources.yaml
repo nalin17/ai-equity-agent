@@ -292,3 +292,19 @@ sources:
     reliability_rating: A
     authentication_method: API key of the owner, read from the environment variable FRED_API_KEY by the network module only; at most one request a second
     schema_description: realtime_start, realtime_end, order_by, sort_order, count, offset, limit and release_dates - a list of release_id and date (YYYY-MM-DD)
+
+  - source_id: nse_fii_dii
+    provider: National Stock Exchange of India (NSE)
+    source_class: exchange_official
+    data_type: daily FII/FPI and DII trading activity in the capital-market segment - buy, sell and net value in Rs crore, for NSE and for NSE, BSE and MSEI combined
+    endpoint: https://www.nseindia.com/reports/fii-dii (two CSV files, fii-dii-nse-latest.csv and fii-dii-combined-latest.csv, downloaded by hand)
+    authority: primary
+    license: NSE Terms of Use - no automated collection; files downloaded by hand and stored privately for the owner's own research, never redistributed (ADR-004, ADR-011); NSDL and CDSL final FPI figures not used - their terms forbid storing them without written permission
+    update_frequency: each trading day after the close; the page shows only the latest trading day
+    historical_coverage: from the first file the owner downloads; a day not downloaded on the day cannot be recovered from the page (history only through NSE's research-data request)
+    latency: same evening (provisional figures)
+    revision_policy: NSE marks the figures provisional; the same day read again with other figures is a new vintage; final figures are on NSDL's and CDSL's sites (not used)
+    timestamp_semantics: publication_time
+    reliability_rating: B
+    authentication_method: none (public page; hand download only - ADR-004)
+    schema_description: header CATEGORY, DATE, BUY VALUE, SELL VALUE, NET VALUE (Rs Crores, split over two lines); two rows, DII and FII/FPI, for one trade date like 01-Oct-2026; amounts with thousands commas

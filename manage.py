@@ -31,8 +31,11 @@ Commands:
                             config/event_routes.yaml - ADR-010
   show-macro-events [FROM] [TO] [--all]  macro and geopolitical events as known now (dates YYYY-MM-DD;
                             default last 30 days) and the scheduled US releases
+  show-flows [FROM] [TO] [--combined]  daily FII/FPI and DII net flows as known now (dates YYYY-MM-DD;
+                            default last 30 days) and the trading days with no file - ADR-011
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
-                            into data/inbox, then load every new file in the right order
+                            into data/inbox, then load every new file in the right order (also the
+                            FII/DII files fii-dii-nse-latest.csv and fii-dii-combined-latest.csv)
   checklist [LISTING ...] [--symbols A,B] [--since YYYY-MM-DD] [--prices-from YYYY-MM-DD]
                             write data/checklist.html - links to the files still to download
   report                    show what is in the database
@@ -76,6 +79,7 @@ from ingestion.news_fetch import CENTRAL_BANK_FEEDS, TooSoon, fetch_central_bank
 from ingestion.macro_events import ATTRIBUTION as EVENTS_ATTRIBUTION, CALENDAR_RELEASES, macro_events  # noqa: E402
 from ingestion.macro_events import scheduled_releases, sync_declared_events  # noqa: E402
 from ingestion.event_routes import sync_routes  # noqa: E402
+from ingestion.nse_flows import SCOPE_TITLES, flows, missing_days  # noqa: E402
 from ingestion.nse_announcements import DEDUP_RULE, MAPPING_VERSION, events, load_announcements  # noqa: E402
 from ingestion.nse_corporate_actions import load_corporate_actions  # noqa: E402
 from ingestion.nse_financial_results import load_results_index, load_results_xbrl  # noqa: E402
@@ -717,6 +721,34 @@ def show_macro_events(args):
     conn.close()
 
 
+def show_flows(args):
+    usage = "Usage: python manage.py show-flows [FROM] [TO] [--combined]"
+    scope = "nse_bse_msei" if "--combined" in args else "nse"
+    args = [a for a in args if a != "--combined"]
+    if len(args) > 2 or any(a.startswith("--") for a in args):
+        raise SystemExit(usage)
+    now = datetime.now(timezone.utc)
+    start = strict_iso_date(args[0]).isoformat() if args else (now - timedelta(days=30)).date().isoformat()
+    end = strict_iso_date(args[1]).isoformat() if len(args) > 1 else now.astimezone(IST).date().isoformat()
+    conn = open_db()
+    when = lambda t: parse_timestamp(t).astimezone(IST).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    sys.stdout.reconfigure(errors="replace")
+    rows = flows(conn, now, "current_decision", scope, start, end)
+    days = sorted({r["trade_date"] for r in rows})
+    print(f"FII/FPI and DII flows on {SCOPE_TITLES[scope]}, capital market, {start} to {end}, as known now (current"
+          f" decision): {len(days)} trading days. Rs crore, provisional (NSE). 'known' is when this system ingested"
+          " the file, India time - never the trade date. Context only - never a buy or sell signal on its own (3G).")
+    by_day = {(r["trade_date"], r["category"]): r for r in rows}
+    for day in days:
+        fii, dii = by_day.get((day, "FII/FPI")), by_day.get((day, "DII"))
+        print(f"  {day}  FII/FPI net {fii['net_crore']:>12,.2f}   DII net {dii['net_crore']:>12,.2f}"
+              f"   known {when(min(fii['known_from'], dii['known_from']))}")
+    gaps = missing_days(conn, now, "current_decision", scope, start, end)
+    print(f"Trading days with no file (lost - NSE's page shows only the latest day): {len(gaps)}"
+          + (": " + ", ".join(g["trade_date"] for g in gaps) if gaps else ""))
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -824,6 +856,9 @@ def report(args):
     print(f"Macro events (central banks): {one('SELECT COUNT(*) FROM me_items')} feed items from"
           f" {one('SELECT COUNT(*) FROM me_reads')} reads; declared {one('SELECT COUNT(*) FROM me_declared')};"
           f" routes {one('SELECT COUNT(*) FROM me_routes')}; calendar reads {one('SELECT COUNT(*) FROM me_calendar_reads')}")
+    print(f"Investor flows (NSE FII/DII): {one('SELECT COUNT(*) FROM fl_files')} files,"
+          f" {one('SELECT COUNT(DISTINCT trade_date) FROM fl_files')} trading days,"
+          f" {one('SELECT COUNT(*) FROM fl_flows')} values")
     print(f"Fundamental figures:       {one('SELECT COUNT(*) FROM pit_facts')}"
           f"  (stored as missing: {one('SELECT COUNT(*) FROM pit_facts WHERE value IS NULL')})")
     for stage, n in conn.execute(
@@ -862,6 +897,7 @@ COMMANDS = {
     "show-india": show_india,
     "fetch-events": fetch_events,
     "show-macro-events": show_macro_events,
+    "show-flows": show_flows,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

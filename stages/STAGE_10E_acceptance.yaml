@@ -1,0 +1,31 @@
+stage: "10E - Aggregate investor flows (NSE FII/FPI and DII)"
+status: ACCEPTED_INVESTOR_FLOWS_BASELINE
+architecture: [40B step 9c, 3C rule 1, 3G, 4, 4C, 4G, 5B, 47 criteria 93 96, 47A guardrails 17 19 20, ADR-004, ADR-011]
+proven:
+  - "40B step 9c: daily FII/FPI and DII flows are stamped with when this system ingested the file - never their trade date; a decision before the file was ingested sees nothing, even long after the trade date; under historical replay nothing is returned (AVAILABILITY_REVIEW, NSE gives no publication time) (tested)"
+  - NSE's two files are recognised by name (NSE, and NSE+BSE+MSEI combined) and kept byte for byte; the header must be exactly the declared five columns in crore; both categories once, one trade date, buy and sell not negative, net equal to buy minus sell to the paisa; any break refuses the file whole and stores nothing (tested)
+  - The trade date must be an NSE trading day by the XBOM calendar and not after ingestion; outside the calendar's coverage the file is refused - never guessed (tested)
+  - The same day read again with other figures is a new vintage counted as revised, and the earlier vintage stays known as of earlier; the same figures again store nothing new (tested)
+  - Trading days in a range with no file are reported as missing (extraction failure), never filled; weekends and NSE holidays are not gaps (tested)
+  - ingest-inbox collects the files from the Downloads folder, keeps a repeated name beside the old file under a content tag, and loads flow files in download order (tested)
+  - Flows are never imported by target, ledger, calibration, validation, model or universe code (static test)
+  - "Real data (NSE's files for 01-Oct-2026, downloaded by the owner 04-Oct-2026 23:09 India time): NSE - DII buy 24,077.65, sell 14,444.02, net 9,633.63; FII/FPI buy 11,210.36, sell 20,370.35, net -9,159.99; NSE+BSE+MSEI - DII net 10,041.84, FII/FPI net -9,484.22 (Rs crore); every row has net = buy - sell"
+  - "Real data on a copy of the owner's database (04-Oct-2026): schema 20, source nse_fii_dii registered; ingest-inbox collected both real files from a Downloads folder and loaded them - 2 raw files, 2 file records, 4 values; nothing under historical replay; 21 NSE trading days of September 2026 reported missing (14-Sep, an NSE holiday, is not)"
+  - 31 of 31 deliberate faults in the new code were caught (two behaviours found untested while planning the faults - re-reading a revised day and the trade-date range - got tests first)
+  - "Real data (the owner's first live ingest-inbox, 04-Oct-2026 23:39 India time, on the owner's database): both files moved from Downloads into the inbox and loaded - NSE FII/FPI net -9,159.99 and DII net 9,633.63, NSE+BSE+MSEI FII/FPI net -9,484.22 and DII net 10,041.84 (Rs crore, 01-Oct-2026), 4 values, 0 refused; known from 18:09 UTC, never from the trade date"
+  - "Real data: the 10 installed files are identical to the tested copies; schema version 20; source nse_fii_dii registered; 936 tests passed on the owner's computer"
+not_claimed:
+  final FII/FPI figures from NSDL or CDSL (their terms forbid storing them without written permission; permission requested): false
+  days not downloaded on the day (NSE's page shows only the latest day; history only through NSE's research request): false
+  publication time of each day's figures (only this system's ingestion time is known): false
+  F&O-segment flows, security-level FII holdings and sector-wise FPI data: false
+  flow features, regime states or sensitivities built on flows: false
+negative_assertions:
+  flow stamped with its trade date as its availability: false
+  flow used in a historical replay: false
+  file breaking net = buy - sell stored or repaired: false
+  missing trading day filled or carried forward: false
+  revised figure overwriting an earlier vintage: false
+  NSDL or CDSL data stored: false
+  NSE contacted by a program: false
+  flow used as a covered security, target or benchmark: false
