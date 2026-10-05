@@ -969,9 +969,10 @@ def test_macro_events_never_feed_targets_benchmarks_or_ledgers():
 
 def test_only_the_route_module_attributes_macro_events():
     calls = re.compile(r"\battribute\(|\bevents_for\(")
-    users = [p.name for p in (PROJECT_ROOT / "src").rglob("*.py")
-             if p.name != "event_routes.py" and calls.search(p.read_text(encoding="utf-8"))]
-    assert users == []
+    src = PROJECT_ROOT / "src"
+    users = [p.relative_to(src).as_posix() for p in src.rglob("*.py") if calls.search(p.read_text(encoding="utf-8"))]
+    # the Knowledge/Event Hub asks the route module and attributes nothing itself (ADR-012)
+    assert sorted(users) == ["ingestion/event_routes.py", "knowledge/hub.py"]
 
 
 def test_the_central_banks_and_the_calendar_are_registered_with_their_terms(env):

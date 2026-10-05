@@ -1,0 +1,31 @@
+stage: "11 - Knowledge/Event Hub (one point-in-time evidence object)"
+status: ACCEPTED_EVIDENCE_HUB_BASELINE
+architecture: [40B step 11, 3B, 3C, 3G, 4A rule 5, 4B rules 3 5, 4C, 4D, 4E, 5A.2, 5B, 30A, ADR-012]
+proven:
+  - "40B step 11: prices, reported figures, announcements, corporate actions, SEBI releases, news stories, central-bank, release and regulation events, the release calendar, FRED and MoSPI series and FII/DII flows all arrive as one Evidence object - domain, kind, subject, attribution, observed day, available_at, claim, value or missing class, unit, source, extraction confidence, routes - each naming the stored row it comes from (tested)"
+  - Nothing known after the decision time enters a bundle; a bundle refuses evidence known later or judged under another claim; the hub only reads - the database is unchanged after gathering under both claims (tested)
+  - available_at is this system's retrieval for current-decision use and the source's proven publication time for historical replay; evidence without proven availability under replay is withheld and counted - prices, corporate actions, reported figures, MoSPI, FII/DII flows, declared events (tested)
+  - "The window is enforced, not requested (5A.2): its end clamps to the decision date in India time; a window wholly after it moves back with its span kept; unreadable bounds fall back to the decision date (tested)"
+  - An event without an issuer reaches a security only through a recorded route, then appears once, as routed - not again as context; a news story reaches a company only when proven to name it (searched-only stories are counted as excluded); a SEBI circular naming no company is context, a release naming the company is its own (tested)
+  - An absent value always carries its missing-data class and a value never does; NSE trading days with no prices or no flows file are listed as missing (extraction failure), weekends and NSE holidays are not; reported figures keep their basis and version (tested)
+  - The domains with no adapter yet - public sentiment, derivatives positioning, alternative data - are named as missing in every bundle; a news store not yet read is a degraded component, never a crash (tested)
+  - The evidence object refuses market, figures or corporate events as context, context about a security, a route without recorded routes, a value with a missing class, a time without a zone, a loose date, an unregistered extraction reading (tested)
+  - "Real data on a copy of the owner's database (stage.py check --smoke, 05-Oct-2026), opened read-only: for the two companies with most figures and for the context alone, under both claims, every domain with data arrived as evidence; 0 items known after the decision time, evidence ids unique, 0 changes to the database; under historical replay prices, MoSPI values and FII/DII flows were withheld and counted"
+  - 24 of 24 deliberate faults in the new code were caught
+  - "Real data: install PASS on the owner's computer (05-Oct-2026 22:43 India time) - the 9 installed files equal the checked ones; schema 20, 19 sources; 957 tests passed"
+  - "Real data (the owner's first live show-evidence HDFCBANK, 05-Oct-2026, on the owner's database): window 2026-09-05 to 2026-10-05, current decision - market 4 daily prices (01-Oct close 721.2), fundamental 147 reported figures, corporate events 10 (01-Oct 'Change in Director(s)'), news/external 5 macro events as context, sector/macro 366, ownership flows 8 (05-Oct NSE FII/FPI net -4,092.96); said as missing: 15 NSE trading days without prices, 17 without a flows file, news not yet read (degraded), public sentiment, derivatives positioning and alternative data not built"
+not_claimed:
+  evidence selection per prediction (30A.1 - a registered policy, 40B step 14): false
+  supporting, contradictory and missing sets per claim (30A.2): false
+  sentiment evidence (40B step 10): false
+  adjusted prices as evidence (the raw series is given; adjustment stays in features): false
+  independence of a news story from the exchange filing it repeats: false
+negative_assertions:
+  evidence available after the decision time in a bundle: false
+  evidence stamped with its observed date as its availability: false
+  event without an issuer attributed to a security without a recorded route: false
+  context evidence attributed to a security: false
+  absent value without a missing-data class: false
+  missing trading day filled or carried forward: false
+  hub writing to the database: false
+  domain without an adapter left unmentioned: false

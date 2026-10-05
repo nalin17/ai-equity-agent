@@ -33,6 +33,9 @@ Commands:
                             default last 30 days) and the scheduled US releases
   show-flows [FROM] [TO] [--combined]  daily FII/FPI and DII net flows as known now (dates YYYY-MM-DD;
                             default last 30 days) and the trading days with no file - ADR-011
+  show-evidence [SYMBOL|ISIN] [FROM] [TO] [--replay]  everything known now as one kind of evidence
+                            (Knowledge/Event Hub): counts per domain, the newest items and what is
+                            missing and why - ADR-012
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order (also the
                             FII/DII files fii-dii-nse-latest.csv and fii-dii-combined-latest.csv)
@@ -86,7 +89,8 @@ from ingestion.nse_financial_results import load_results_index, load_results_xbr
 from ingestion.nse_financial_results import IST  # noqa: E402
 from ingestion.sebi_releases import ENTITY_RULE as SEBI_ENTITY_RULE, KINDS_RULE, releases  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
-from provenance.availability import parse_timestamp  # noqa: E402
+from knowledge.hub import gather  # noqa: E402
+from provenance.availability import PitClaim, parse_timestamp  # noqa: E402
 from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
 from universe.identity_bridges import BridgeRefused, bridge_candidates, create_bridge  # noqa: E402
@@ -749,6 +753,36 @@ def show_flows(args):
     conn.close()
 
 
+def show_evidence(args):
+    usage = "Usage: python manage.py show-evidence [SYMBOL|ISIN] [FROM] [TO] [--replay]"
+    claim = PitClaim.HISTORICAL_REPLAY if "--replay" in args else PitClaim.CURRENT_DECISION
+    args = [a for a in args if a != "--replay"]
+    who = args[0] if args and not args[0][:1].isdigit() else None
+    dates = args[1:] if who else args
+    if len(dates) > 2 or any(a.startswith("--") for a in args):
+        raise SystemExit(usage)
+    now = datetime.now(timezone.utc)
+    conn = open_db()
+    isin = resolve(conn, who, now.astimezone(IST).date().isoformat()) if who else None
+    bundle = gather(conn, now, claim, isin, *[strict_iso_date(d).isoformat() for d in dates])
+    sys.stdout.reconfigure(errors="replace")
+    print(f"Evidence {'for ' + who + ' (' + isin + ') and ' if isin else 'for '}the context, {bundle.start} to"
+          f" {bundle.end}, as known now ({claim.value}; hub {bundle.hub_version}). Values are data, never"
+          " advice; context is never attributed to a company except by a recorded route.")
+    if bundle.window_note:
+        print(f"  window: {bundle.window_note}")
+    for domain, n in bundle.counts().items():
+        print(f"  {domain.value:<24} {n:>6}")
+        for e in sorted(bundle.of(domain), key=lambda x: (x.observed, x.evidence_id))[-3:]:
+            shown = e.missing_class.value if e.value is None else str(e.value)
+            print(f"      {e.observed}  {e.kind:<24} {shown[:60]:<60} {e.subject[:28]}")
+    print("Not given, and why:")
+    for g in bundle.gaps:
+        print(f"  {g.domain.value} - {g.nature.value} - {g.component}: {g.reason}"
+              + (f" ({g.count})" if g.count is not None else "") + (": " + ", ".join(g.items) if g.items else ""))
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -898,6 +932,7 @@ COMMANDS = {
     "fetch-events": fetch_events,
     "show-macro-events": show_macro_events,
     "show-flows": show_flows,
+    "show-evidence": show_evidence,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,
