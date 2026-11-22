@@ -1,6 +1,6 @@
 # HANDOFF (compact) - AI Self-Learning Equity Research Agent
 
-Compact handoff written 2026-11-22 (end of the sixth chat: Stage 12A). Read THIS file fully, then
+Compact handoff written 2026-11-22 (end of the sixth chat: Stages 12A and 6a). Read THIS file fully, then
 `data\handover\stage12\PLAN.md` (Stage 12 decisions, measured facts, 12B plan); read other files only when a task
 needs them (section 9 says where). Governing architecture: `docs/Master_Architecture_v2_2_0_FROZEN.md` (v2.2.0,
 frozen - amend only by insertion with an ADR, 46/46A). Older detail is in git history: `git show
@@ -9,17 +9,19 @@ frozen - amend only by insertion with an ADR, 46/46A). Older detail is in git hi
 ## 0. State (22-Nov-2026)
 | Item | State |
 |---|---|
-| Last pushed commit | Stage 12A GKG headlines and sentiment inputs (ADR-013), committed by `stage.py commit stage12a` - see `git log -1`. Before it: `9c3d2d3` Stage 11. 1,010 tests. |
-| Stage 12A | ACCEPTED: check PASS (1,010 tests, 39/39 faults, smoke with the real GKG samples on a database copy), install PASS 22-Nov 12:17, live `fetch-gkg` (91 files, 6,659 rows kept) and `show-sentiment HDFCBANK` verified (record in stages/STAGE_12A_acceptance.yaml). |
-| Database | `data/equity.sqlite`, schema 21, 20 sources. Backups `data/equity_before_*.sqlite` (latest `_12a`). |
+| Last pushed commit | Stage 6a daily NSE prices from Kite Connect (ADR-014), committed by `stage.py commit stage6a` - see `git log -1`. Before it: `238a96c` Stage 12A. 1,066 tests. |
+| Stage 6a | ACCEPTED: check PASS (1,066 tests, 43/43 faults, smoke on a database copy), installed 22-Nov, live `fetch-kite`: 2,581 companies, 4,714,239 day candles 1-Jan-2015 to 21-Nov-2026 (record in stages/STAGE_06A_acceptance.yaml). Kite data is stored BEFORE Zerodha's written permission, by the owner's decision (Kite terms 4(b); email sent 22-Nov) - if Zerodha refuses: `manage.py purge-kite --yes-delete-all-kite-data`. |
+| Stage 12A | ACCEPTED 22-Nov (GKG headlines, filing directions, price echo, liquidity band - now rule se-liquidity-2 using Kite days). |
+| Database | `data/equity.sqlite`, schema 23, 21 sources, about 0.5 GB more with Kite. Backups `data/equity_before_*.sqlite` (latest `_6a_20261122-154709`). |
 | First check each chat | `python data\handover\tools\status.py --ci` (one screen: git, tests, stage report, database, freshness incl. GKG, gaps, calendar, Downloads, CI). |
-| Next build | Stage 12B = FinBERT headline scorer (owner's choice 22-Nov) - first a new price-echo rule version se-echo-2 with the HDB headline as a named test (section 8). Then the owner chooses: BusinessLine/The Hindu + RBI RSS (approved 09-Nov) or 40B step 12. |
+| Next build | Stage 6a-2 (small): check the 2016-2018 candles stamped 09:15 etc. against NSE's own bhavcopies (owner downloads a few dates by hand) and accept them under a new rule if they match; set aside candles dated before a company's listing (MAZDOCK). Then Stage 12B = FinBERT (se-echo-2 first; ADR-015). Then the owner chooses: BusinessLine/The Hindu + RBI RSS (approved 09-Nov) or 40B step 12. |
 
-### 0.1 Verify Stage 12A at the start of the next chat
-`python data\handover\tools\status.py --ci` must show: HEAD = the Stage 12A commit, tree clean, origin/main
-equal, tests 1010 passed, CI success for HEAD. If `git log -1` is still Stage 11 (9c3d2d3), the owner had not
-finished: `python data\handover\stage12a\patch_stage12a_record.py`, then
-`python data\handover\tools\stage.py commit stage12a`.
+### 0.1 Verify Stage 6a at the start of the next chat
+`python data\handover\tools\status.py --ci` must show: HEAD = the Stage 6a commit, tree clean, origin/main
+equal, tests 1066 passed, CI success for HEAD. If `git log -1` is still Stage 12A (238a96c), the owner had not
+finished: `python data\handover\stage6a\patch_stage6a_record.py`, then
+`python data\handover\tools\stage.py commit stage6a`. Check memory and data\handover\research\permissions\ for
+Zerodha's and TrueData's replies.
 
 ## 1. Owner and working style
 - Owner (GitHub nalin17) is NOT a developer: pastes PowerShell lines, replies "done". Plain language, they/them.
@@ -56,13 +58,19 @@ finished: `python data\handover\stage12a\patch_stage12a_record.py`, then
 
 ## 3. Rules that must never be broken
 1. NSE: no automated collection - hand downloads only (ADR-004). No scrapers, no nsepython/jugaad, no NSE mirrors.
-2. LICENSED ONLY: no data used against its terms; repos copying NSE data not used. TradingView never.
-3. Only `src/ingestion/news_fetch.py` opens network connections (static tests), allow-list of 8 hosts, exact
+2. LICENSED ONLY: no data used against its terms; repos copying NSE data not used. TradingView never. One
+   recorded exception, the owner's own decision of 22-Nov-2026: Kite data stored while Zerodha's permission
+   under its terms 4(b) is awaited (ADR-014) - purge-kite at once if refused. Scrapers of sites whose terms
+   forbid them: never (Moneycontrol, ET, BS, Mint, Screener checked 09-Nov).
+3. Only `src/ingestion/news_fetch.py` opens network connections (static tests), allow-list of 9 hosts, exact
    paths, no redirects: api.gdeltproject.org, www.sebi.gov.in (/sebirss.xml), api.stlouisfed.org (series,
    observations, release/dates), api.mospi.gov.in (3 paths), www.federalreserve.gov (/feeds/press_monetary.xml),
    www.ecb.europa.eu (/rss/press.html), www.boj.or.jp (/en/rss/whatsnew.xml), data.gdeltproject.org
-   (/gdeltv2/lastupdate.txt and /gdeltv2/<slot>.gkg.csv.zip - ADR-013). New host = owner approval + ADR.
-4. Secrets (FRED_API_KEY, user env var) never in chat, repo, logs, files, URLs stored, messages.
+   (/gdeltv2/lastupdate.txt and /gdeltv2/<slot>.gkg.csv.zip - ADR-013), api.kite.trade (POST /session/token,
+   /instruments/NSE, /instruments/historical/<token>/day - ADR-014). New host = owner approval + ADR.
+4. Secrets (FRED_API_KEY, KITE_API_KEY, KITE_API_SECRET - user env vars; Kite's request and access tokens and
+   its login answer with the owner's name and email - memory only) never in chat, repo, logs, files, URLs stored,
+   messages.
 5. Certificates always checked. Legacy TLS only for MoSPI; extra root (Sectigo E46, fingerprint-checked) only for ECB.
 6. Never repair, fill or carry forward data: refuse, quarantine, or classify missing (MissingClass, 4C).
 7. Append-only tables (triggers); corrections are new vintages.
@@ -100,15 +108,17 @@ over 260 characters fail (keep test copies under a short %TEMP% folder); test_ou
 - Logs `logs/app.log`; downloads land in `C:\Users\nalin\Downloads`, ingest-inbox moves them to `data\inbox`.
 - Owner's daily routine: `fetch-sebi` (feed keeps ~3 working days - daily!), `fetch-gkg` (GDELT GKG headlines,
   ~0.4 GB a day downloaded, little stored; catches up a week of unread slots), `fetch-macro`, `fetch-india`,
-  `fetch-events`; trading evenings: download both CSVs from https://www.nseindia.com/reports/fii-dii then
-  `ingest-inbox`. `fetch-news` (DOC API) is refused by GDELT since 05-Oct - not in the routine.
+  `fetch-events`, and after 18:00 India time `fetch-kite` (browser login, paste the 127.0.0.1:5000/kite address;
+  about 2,600 requests, ~15 minutes; dropped connections and 5xx are retried); trading evenings: download both
+  CSVs from https://www.nseindia.com/reports/fii-dii then `ingest-inbox`. `fetch-news` (DOC API) is refused by
+  GDELT since 05-Oct - not in the routine. Kite Connect (Rs 500 / 30 days) bought 22-Nov-2026: renew by 22-Dec.
 - Calendars (config/market_calendars.yaml) end 2026-12-31. Owner's choice 22-Nov: regenerate all three in
   December once NSE publishes its 2027 holiday list (owner downloads it). exchange_calendars 4.13.3 has NO XBOM
   2027 dates; Windows Application Control blocked pandas 3.1.1's DLL in a %TEMP% venv on 09-Nov - use an older
   pandas or a pandas-free generator, and take XBOM 2027 from NSE's circular if the library still lacks it.
 - FinBERT trial venv `%TEMP%\fbt` (torch 2.15 CPU + transformers 5.24 import fine on this PC, 22-Nov).
 
-## 6. Stages done (records in stages/*_acceptance.yaml, decisions in docs/decisions/ADR-001..013)
+## 6. Stages done (records in stages/*_acceptance.yaml, decisions in docs/decisions/ADR-001..014)
 | Stage | Commit | 40B step | What |
 |---|---|---|---|
 | 0-6 | 9773aa2..2606dea | 1-5 | skeleton, registry, trust chain, PIT store, universe |
@@ -121,9 +131,10 @@ over 260 characters fail (keep test copies under a short %TEMP% folder); test_ou
 | 10D | 6cdf2fe | 9b | Fed/ECB/BoJ feeds, FRED release calendar, derived release events, routes |
 | 10E | 2994320 | 9c | NSE FII/DII daily flows by hand download |
 | 11 | 9c3d2d3 | 11 | Knowledge/Event Hub: one evidence object, read-only, gaps always said |
-| 12A | (section 0.1) | 10 | GKG headlines (raw files not kept), filing directions, price echo, liquidity band, public sentiment in the hub (unscored) |
-Tests: 1,010 after Stage 12A. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58, 10D 101/101, 10E 31/31,
-11 24/24, 12A 39/39.
+| 12A | 238a96c | 10 | GKG headlines (raw files not kept), filing directions, price echo, liquidity band, public sentiment in the hub (unscored) |
+| 6a | (section 0.1) | 6a | Kite Connect daily candles for 2,581 NSE companies from 2015 (vendor-adjusted, vintages, purgeable) |
+Tests: 1,066 after Stage 6a. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58, 10D 101/101, 10E 31/31,
+11 24/24, 12A 39/39, 6a 43/43.
 
 ## 7. Code map (src/)
 - core: config, database (migrate/rollback/run_in_transaction), dates (strict_iso_date), sessions (time zones),
@@ -136,21 +147,33 @@ Tests: 1,010 after Stage 12A. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-
   nse_announcements (events), intake, gdelt_news (stories, EntityReader nw-entity-1), gdelt_gkg (load_gkg,
   extract, stories, stored_slots; tables gk_*), sebi_releases (releases), macro_context (FRED observations/latest),
   india_macro (MoSPI), macro_events (macro_events, scheduled_releases), event_routes (attribute, events_for),
-  nse_flows (flows, missing_days), news_fetch (the ONLY network code; GkgClient, gkg_slots, fetch_gkg).
+  nse_flows (flows, missing_days), kite_prices (read_instruments, map_instruments incl. -BE/-BZ, read_candles with
+  set-aside, plan_requests, readjusted, load_fetch, series, purge; tables kt_*), news_fetch (the ONLY network code;
+  GkgClient, gkg_slots, fetch_gkg; KiteClient, kite_credentials, kite_request_token, fetch_kite).
 - knowledge: evidence (Domain, Attribution, GapNature, Evidence, EvidenceGap, Bundle), hub (gather, clamp_window;
-  adapters per domain incl. _gkg and _sentiment; hub-2; NOT_BUILT = derivatives, alternative data), sentiment
-  (rules an-direction-1, se-echo-1, se-eligible-1, se-liquidity-1: filing_direction, price_echo, eligibility,
-  liquidity).
+  adapters per domain incl. _gkg, _sentiment and _vendor_prices; hub-3; NOT_BUILT = derivatives, alternative data),
+  sentiment (rules an-direction-1, se-echo-1, se-eligible-1, se-liquidity-2: filing_direction, price_echo,
+  eligibility, liquidity).
 - features/price_series.py. Empty packages for later steps: abstention, calibration, experiments, ledger, models,
   regimes, research, targets, validation.
 - manage.py commands: init-db, sources, load-*, ingest-prices, ingest-inbox, checklist, compare-series,
   bridge-isins, show-fundamentals/-events/-news/-sebi/-macro/-india/-macro-events/-flows/-evidence/-sentiment,
-  fetch-news/-sebi/-macro/-india/-events/-gkg, report.
-- config: sources.yaml (20), news_names.yaml (6 companies - only these can be a headline's subject),
+  fetch-news/-sebi/-macro/-india/-events/-gkg/-kite, purge-kite, report.
+- config: sources.yaml (21), news_names.yaml (6 companies - only these can be a headline's subject),
   macro_series.yaml (25), india_macro_series.yaml (9),
   market_calendars.yaml, declared_events.yaml and event_routes.yaml (owner-owned, empty).
 
 ## 8. Next steps and open items
+- Stage 6a-2 (small, first): (a) Kite's candles from 1-Jan-2016 to 30-Nov-2018 are stamped 09:15 (or 10:00 ...)
+  instead of 00:00 for 466 companies - one per company and day, the whole period for NMDC, Coal India, Petronet,
+  ONGC - and are set aside (4,493 in kt_problems). Owner downloads NSE's own bhavcopies for 3-4 dates of 2016-2018
+  by hand; a probe that only prints (stores nothing) fetches the same days from Kite; if they match (allowing for
+  Kite's corporate-action adjustment), accept such candles under a new rule version and re-fetch that period.
+  (b) Set aside candles dated before a company's NSE listing (MAZDOCK, listed 12-Oct-2020, has a broken
+  4-Dec-2017 candle). (c) 1,335 doubled days in 57 companies stay set aside. Also: status.py should show Kite.
+- Zerodha's answer to the storage request (sent 22-Nov) and TrueData's answers (email drafted in
+  data\handover\research\truedata_email.txt) - save replies in data\handover\research\permissions\. If Zerodha
+  refuses: purge-kite, and record it.
 - Stage 12B = FinBERT scorer (plan in data\handover\stage12\PLAN.md section 3, 12B). FIRST: se-echo-2 with the
   live false negative 'HDFC Bank (HDB) Finds Its Spark Amid Wall Street Selloff' (a US ADR's price move, no stock
   word, no percentage) as a named test - before any headline is scored. Then: owner downloads ProsusAI/finbert
@@ -158,17 +181,17 @@ Tests: 1,010 after Stage 12A. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-
   data\models\finbert\; pin HF commit + sha256 per file; local_files_only; torch/transformers in
   requirements-scorer.txt, not requirements.txt (CI unchanged); raw 3-class probabilities stored, never flipped;
   several companies in one headline = uncertain; filing-vs-headline disagreement recorded as conflict; scores of
-  headlines before the model's training cutoff refused for replay; ADR-014.
+  headlines before the model's training cutoff refused for replay; ADR-015.
 - After 12B the owner chooses: BusinessLine/The Hindu RSS + RBI press-release RSS (approved 09-Nov; conditions in
   data\handover\STAGE12_BRIEF.md) or 40B step 12. Proposed, not approved: NSE PIT/SAST/pledge/bulk-deal CSVs.
 - Owner to do: daily `fetch-gkg` and the feeds (section 5); send NSE research request (`data\handover\nse_request\`)
   and NSDL email (`data\handover\nsdl_request\email_to_nsdl.txt`); save any publisher replies (Moneycontrol, Mint,
   Business Standard, ET - asked 09-Nov) in data\handover\research\permissions\; December: NSE 2027 holiday list.
 - Decisions pending: 30-company coverage cohort (3A.2 rule 5, preregistered) - also decides which companies get
-  news names; price history for step 6a (NSE research data, else an authorised vendor with owner approval - the
-  true bottleneck: 6 trading days of prices - 20/21-Aug, 21/22-Sep, 30-Sep, 01-Oct-2026; the liquidity band
-  ignores sessions older than 120 days, so from 20-Dec-2026 sentiment is refused for every company unless at
-  least 5 newer bhavcopies are loaded by hand).
+  news names. Price history now: Kite's vendor-adjusted daily candles for 2,581 companies from 2015 (gaps
+  2016-2018 for 466, see 6a-2); NOT survivorship-free (no delisted companies) and NOT as traded - raw prices
+  remain NSE's hand-downloaded bhavcopies (6 days). For honest back-tests: NSE research data (request drafted in
+  data\handover\nse_request\) or NSE's licence (about Rs 1 lakh a year), or TrueData if it covers delisted stocks.
 - Remaining 40B order after 12: 12 Feature Factory, 13 Target Engine, 14 Research Agent v0.1 (evidence selection
   30A.1 and supporting/contradictory/missing sets 30A.2 build on the hub), 15 Prediction Ledger, 16 Shadow,
   17-23. Steps 13-16 are the critical path (3F); 6a runs alongside.

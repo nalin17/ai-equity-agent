@@ -434,7 +434,7 @@ def test_below_the_band_sentiment_is_refused_while_its_news_stays_attention(mark
     bundle = gather(market, DECIDE, CURRENT, TCS)
     assert bundle.of(Domain.PUBLIC_SENTIMENT) == []
     [refused] = bundle.gaps_of(Domain.PUBLIC_SENTIMENT)
-    assert refused.nature == GapNature.EXCLUDED and "Rs 4.00 crore" in refused.reason and "se-liquidity-1" in refused.reason
+    assert refused.nature == GapNature.EXCLUDED and "Rs 4.00 crore" in refused.reason and "se-liquidity-2" in refused.reason
     [story] = [e for e in bundle.of(Domain.NEWS_EXTERNAL) if e.source_id == "gdelt_gkg"]
     assert story.details["sentiment_eligible"]   # eligible as text, refused by the band
 

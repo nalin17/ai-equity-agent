@@ -11,7 +11,8 @@ Rules it follows:
   (default 30 days back). Prices, events, news, flows and series observations are bounded by it; reported
   figures are not (each period is its own fact); corporate actions and scheduled releases may lie ahead of
   it, because their dates were known in advance.
-- For a security: its prices, reported figures, announcements (one release = one event), corporate actions,
+- For a security: its prices (NSE's raw files; for days they lack, Kite's vendor-adjusted candles, labelled as
+  such and withheld under historical replay - ADR-014), reported figures, announcements (one release = one event), corporate actions,
   SEBI releases naming it, news stories proven to name it (a story only returned by a search for it is left
   out - 4B rule 3), GKG headline stories naming it, and the events without an issuer that reach it through
   declared, recorded routes (4A rule 5).
@@ -39,6 +40,7 @@ from ingestion.event_routes import events_for
 from ingestion.gdelt_gkg import MIN_AGE as GKG_MIN_AGE, SLOT as GKG_SLOT, SOURCE_ID as GKG, GkgNotReadError
 from ingestion.gdelt_gkg import stored_slots, stories as gkg_stories
 from ingestion.gdelt_news import NewsNotReadError, stories
+from ingestion.kite_prices import SOURCE_ID as KITE, series as vendor_series
 from ingestion.india_macro import (SOURCE_ID as MOSPI, india_latest, india_observations, india_series_info,
                                    registered_india_series)
 from ingestion.macro_context import latest, observations, registered_series, series_info
@@ -54,7 +56,7 @@ from provenance.availability import Availability, PitClaim, disposition, parse_t
 from provenance.pit_store import fact_as_of
 from universe.entities import validate_isin
 
-HUB_VERSION = "hub-2"
+HUB_VERSION = "hub-3"
 DEFAULT_DAYS = 30
 FRED, FRED_CALENDAR = "fred_alfred", "fred_release_calendar"
 NOT_BUILT = {
@@ -163,8 +165,29 @@ def _prices(ctx):
     if review:
         ctx.gaps.append(withheld(Domain.MARKET, "prices", review, "no proven publication time - AVAILABILITY_REVIEW"
                                  " for historical replay (5B.1)"))
+    have |= _vendor_prices(ctx)
     if ctx.claim == PitClaim.CURRENT_DECISION:
         _missing_trading_days(ctx, have, "prices", Domain.MARKET)
+
+
+def _vendor_prices(ctx):
+    """Kite's daily candles (ADR-014) for days NSE's own files lack: the newest vintage known at the decision,
+    labelled as the vendor's adjusted series - never mixed into the raw one. Under historical replay they are
+    withheld and counted. Returns the days given."""
+    found, held = vendor_series(ctx.conn, ctx.isin, ctx.decision, ctx.claim, start=ctx.start, end=ctx.end)
+    own = {e.observed for e in ctx.evidence if e.kind == "daily_price" and e.subject == ctx.isin}
+    for day in sorted(set(found) - own):
+        c = found[day]
+        _add(ctx, evidence_id=f"kt_candles:{c['fetch_id']}:{day}", domain=Domain.MARKET, kind="vendor_daily_price",
+             subject=ctx.isin, attribution=Attribution.DIRECT, observed=day, available_at=c["retrieved_at"],
+             value=c["close"], unit="INR", source_id=KITE,
+             details={"open": c["open"], "high": c["high"], "low": c["low"], "volume": c["volume"],
+                      "series": "adjusted for corporate actions by the vendor (Zerodha Kite) - not as traded",
+                      "vintage": c["fetch_id"]})
+    if held:
+        ctx.gaps.append(withheld(Domain.MARKET, "vendor prices", held, "the vendor's adjusted values were not public"
+                                 " as such on the trade date - AVAILABILITY_REVIEW for historical replay (5B.1)"))
+    return set(found) - own
 
 
 def _figures(ctx):

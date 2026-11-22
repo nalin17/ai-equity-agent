@@ -19,19 +19,24 @@
                   its last stored sessions known at the decision (up to 60, none older than 120 days) is at least
                   Rs 25 crore, from at least 5 sessions.
                   Below it, or with fewer sessions, sentiment is refused - never down-weighted (4B.2 rule 1).
+  se-liquidity-2  (Stage 6a, replaces -1) the same band, measured over NSE's own files and, for days they lack,
+                  the newest Kite vintage known at the decision (ADR-014). Close x volume survives the vendor's
+                  split and bonus adjustment, so it is still the day's traded value. Under historical replay the
+                  vendor's days are withheld, as NSE's files without a proven publication time are.
 """
 import re
 import statistics
 from datetime import timedelta
 
 from core.dates import strict_iso_date
+from ingestion.kite_prices import series as kite_series
 from ingestion.nse_financial_results import IST
 from provenance.availability import Availability, parse_timestamp, price_availability
 
 DIRECTION_RULE = "an-direction-1"
 ECHO_RULE = "se-echo-1"
 ELIGIBILITY_RULE = "se-eligible-1"
-LIQUIDITY_RULE = "se-liquidity-1"
+LIQUIDITY_RULE = "se-liquidity-2"
 
 POSITIVE, NEGATIVE, UNKNOWN, CONFLICTING, PRICE_ECHO = "positive", "negative", "unknown", "conflicting", "price_echo"
 SUBJECT_DIRECTIONS = {   # NSE subject -> direction under an-direction-1; only subjects with one meaning
@@ -118,27 +123,34 @@ def eligibility(story):
 
 
 def liquidity(conn, isin, decision_time, claim):
-    """The liquidity gate of 4B.2 rule 1 under se-liquidity-1, from the prices known at decision_time under the
-    claim: {'admitted', 'median_crore', 'sessions', 'withheld', 'reason', 'rule'}."""
+    """The liquidity gate of 4B.2 rule 1 under se-liquidity-2, from the prices known at decision_time under the
+    claim: {'admitted', 'median_crore', 'sessions', 'vendor_sessions', 'withheld', 'reason', 'rule'}."""
     today = parse_timestamp(decision_time).astimezone(IST).date()
     oldest = (today - timedelta(days=LIQUIDITY_MAX_AGE_DAYS)).isoformat()
     rows = conn.execute("SELECT price_id, trade_date, close_price, volume FROM trusted_prices WHERE isin = ?"
                         " AND trade_date <= ? AND trade_date >= ? ORDER BY trade_date DESC, price_id",
                         [isin, today.isoformat(), oldest]).fetchall()
-    values, withheld, dates = [], 0, set()
-    for price_id, trade_date, close, volume in rows:
-        if len(values) >= LIQUIDITY_SESSIONS:
-            break
+    by_day, withheld = {}, 0
+    for price_id, trade_date, close, volume in rows:   # NSE's own files first: raw, as traded
         state = price_availability(conn, price_id, decision_time, claim)
         if state != Availability.ELIGIBLE:
             withheld += state == Availability.AVAILABILITY_REVIEW
             continue
-        if close is None or volume is None or trade_date in dates:
+        if close is None or volume is None or trade_date in by_day:
             continue
         strict_iso_date(trade_date)
-        dates.add(trade_date)
-        values.append(float(close) * float(volume) / CRORE)
+        by_day[trade_date] = float(close) * float(volume) / CRORE
+    vendor, vendor_withheld = kite_series(conn, isin, decision_time, claim, start=oldest, end=today.isoformat())
+    withheld += vendor_withheld
+    vendor_days = set()
+    for day, candle in vendor.items():   # then the vendor's days NSE's files lack (close x volume survives adjustment)
+        if day not in by_day:
+            by_day[day] = candle["close"] * candle["volume"] / CRORE
+            vendor_days.add(day)
+    days = sorted(by_day, reverse=True)[:LIQUIDITY_SESSIONS]
+    values = [by_day[d] for d in days]
     found = {"sessions": len(values), "withheld": withheld, "rule": LIQUIDITY_RULE,
+             "vendor_sessions": sum(d in vendor_days for d in days),
              "threshold_crore": LIQUIDITY_MIN_CRORE, "min_sessions": LIQUIDITY_MIN_SESSIONS}
     if len(values) < LIQUIDITY_MIN_SESSIONS:
         why = (f"only {len(values)} trading sessions with a known close and volume in the last"

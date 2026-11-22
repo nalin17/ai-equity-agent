@@ -757,7 +757,8 @@ def test_the_fetcher_reaches_only_gdelt_the_sebi_feed_fred_and_mospi():
         news_fetch.http_get("https://www.sebi.gov.in/enforcement/orders.html")   # ADR-006: the feed only
     assert news_fetch.ALLOWED_HOSTS == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org",
                                         "api.mospi.gov.in", "www.federalreserve.gov", "www.ecb.europa.eu",
-                                        "www.boj.or.jp", "data.gdeltproject.org"}   # ADR-008, -009, -010, -013
+                                        "www.boj.or.jp", "data.gdeltproject.org",
+                                        "api.kite.trade"}   # ADR-008, -009, -010, -013, -014
     assert news_fetch.SEBI_FEED == "https://www.sebi.gov.in/sebirss.xml"
 
 
@@ -786,7 +787,7 @@ def test_the_news_fetcher_names_no_host_but_gdelt_sebi_fred_and_mospi():
     hosts = set(re.findall(r"https?://([^/\"'\s]+)", FETCHER.read_text(encoding="utf-8")))
     assert hosts == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in",
                      "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp",
-                     "data.gdeltproject.org"}   # ADR-010, ADR-013
+                     "data.gdeltproject.org", "api.kite.trade"}   # ADR-010, ADR-013, ADR-014
 
 
 def test_only_manage_py_uses_the_news_fetcher():

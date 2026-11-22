@@ -848,7 +848,7 @@ class FakeGet:
 def test_the_fetcher_reads_one_feed_address_per_central_bank_only():
     assert news_fetch.ALLOWED_HOSTS == {"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org",
                                         "api.mospi.gov.in", "www.federalreserve.gov", "www.ecb.europa.eu",
-                                        "www.boj.or.jp", "data.gdeltproject.org"}
+                                        "www.boj.or.jp", "data.gdeltproject.org", "api.kite.trade"}
     for url in ("https://www.federalreserve.gov/feeds/press_all.xml", "https://www.federalreserve.gov/monetarypolicy.htm",
                 "https://www.ecb.europa.eu/rss/press.html?x=1", "https://www.ecb.europa.eu/rss/statpress.html",
                 "https://www.boj.or.jp/en/rss/whatsnew.xml#x", "https://www.boj.or.jp/en/mopo/mpmdeci/index.htm",

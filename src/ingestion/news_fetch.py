@@ -8,6 +8,13 @@ when at least 75 minutes old: Google's cache keeps a 404 for up to an hour for a
 a 404 means 'not yet', never 'no news'. Any other refusal stops the run. The file is checked against GDELT's md5
 when lastupdate.txt lists it; it is never kept - only its India-relevant rows are stored (gdelt_gkg.load_gkg).
 
+Kite Connect (ADR-014): on api.kite.trade only POST /session/token, GET /instruments/NSE and GET
+/instruments/historical/<token>/day are asked for, at most 3 historical requests a second (Kite's limit). The
+owner's API key and secret are read only here, from KITE_API_KEY and KITE_API_SECRET; the owner logs in in their
+own browser and pastes the redirect address; the request token, the access token (valid until 6 AM) and the
+login answer (with the owner's name and email) live only in memory for one run - never in a file, table, log line
+or message. The access token travels only in the Authorization header, never in an address.
+
 This is the ONLY module in the project allowed to open a network connection, and it contacts
 only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, on each
 central bank's site only its feed address in CENTRAL_BANK_FEEDS, and on
@@ -57,6 +64,8 @@ from ingestion.gdelt_gkg import read_lastupdate, slot_of
 from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response, news_names, read_response
 from ingestion.india_macro import API_PATHS as MOSPI_DATASET_PATHS, MAX_PAGES, MospiResponseError, load_mospi_pages
 from ingestion.india_macro import page_params, read_page
+from ingestion.kite_prices import KiteResponseError, load_fetch, map_instruments, plan_requests, read_candles
+from ingestion.kite_prices import chunks, read_instruments, readjusted, start_run
 from ingestion.macro_context import load_fred_answers, read_observations, read_series_meta, request_for, series_info
 from ingestion.macro_events import calendar_request, load_feed as load_event_feed, load_release_dates
 from ingestion.macro_events import read_feed as read_event_feed, read_release_dates
@@ -65,7 +74,20 @@ from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
 ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in",
-                           "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp", "data.gdeltproject.org"})
+                           "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp", "data.gdeltproject.org",
+                           "api.kite.trade"})
+KITE_HOST = "api.kite.trade"
+KITE_API = "https://api.kite.trade"
+KITE_SESSION = KITE_API + "/session/token"
+KITE_INSTRUMENTS = KITE_API + "/instruments/NSE"
+KITE_HISTORICAL = re.compile(r"^/instruments/historical/\d+/day$")
+KITE_HISTORY_KEYS = ("from", "to", "continuous", "oi")
+KITE_KEY_VARIABLE, KITE_SECRET_VARIABLE = "KITE_API_KEY", "KITE_API_SECRET"
+KITE_CREDENTIAL = re.compile(r"^[A-Za-z0-9]{8,64}$")
+KITE_INTERVAL = 0.35          # seconds between requests: Kite allows 3 historical requests a second
+KITE_DAY_CLOSES = 18          # India-time hour after which today's day candle is final enough to keep
+KITE_RETRY_WAITS = (5, 20, 60)   # seconds before asking a download again after the connection dropped
+KITE_TRANSIENT = frozenset({500, 502, 503, 504})   # server errors asked again like a dropped connection (22-Nov: 502)
 GKG_HOST = "data.gdeltproject.org"
 GKG_BASE = "https://data.gdeltproject.org/gdeltv2/"
 GKG_LASTUPDATE = GKG_BASE + "lastupdate.txt"     # with GKG files, the only addresses on this host (ADR-013)
@@ -163,6 +185,13 @@ def _check_host(url):
                              or (url != GKG_LASTUPDATE and not GKG_PATH.match(parts.path))):
         raise FetchError(f"{_shown(url)!r} is not an allowed address: only GDELT's lastupdate.txt and GKG files are"
                          " read (ADR-013)")
+    if host == KITE_HOST:
+        keys = [k for k, _ in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)]
+        history = KITE_HISTORICAL.match(parts.path) and set(keys) <= set(KITE_HISTORY_KEYS) and len(keys) == len(set(keys))
+        plain = url in (KITE_SESSION, KITE_INSTRUMENTS)
+        if parts.netloc != host or parts.fragment or not (plain or history):
+            raise FetchError(f"{_shown(url)!r} is not an allowed address: only Kite's session, NSE instrument list and"
+                             " daily history are asked for (ADR-014)")
 
 
 def ecb_root():
@@ -186,11 +215,16 @@ def tls_context(host):
 
 
 def http_get(url):
+    """(HTTP status, body) of a GET."""
+    return http_request(url)
+
+
+def http_request(url, method="GET", headers=None, data=None):
     """(HTTP status, body). The only network call in the project."""
     _check_host(url)
     host = urllib.parse.urlsplit(url).hostname
     opener = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=tls_context(host)))
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    request = urllib.request.Request(url, data=data, method=method, headers={"User-Agent": USER_AGENT, **(headers or {})})
     try:
         with opener.open(request, timeout=TIMEOUT) as response:
             return response.status, response.read()
@@ -616,4 +650,183 @@ def fetch_gkg(conn, client, start=None, max_files=GKG_MAX_FILES):
         report["kept"] += result["kept"]
         report["problems"] += result["problems"]
     report["megabytes"] = round(report["megabytes"], 1)
+    return report
+
+
+# ---- Zerodha Kite Connect (ADR-014) -------------------------------------------------------------------------
+
+def kite_credentials(environ=None):
+    """(api_key, api_secret) from the owner's environment, or FetchError. Neither is ever shown."""
+    env = os.environ if environ is None else environ
+    key, secret = env.get(KITE_KEY_VARIABLE, "").strip(), env.get(KITE_SECRET_VARIABLE, "").strip()
+    if not KITE_CREDENTIAL.match(key) or not KITE_CREDENTIAL.match(secret):
+        raise FetchError(f"{KITE_KEY_VARIABLE} and {KITE_SECRET_VARIABLE} must both be set on this computer (letters and"
+                         " digits) - see docs/decisions/ADR-014; nothing was sent")
+    return key, secret
+
+
+def kite_request_token(pasted):
+    """The request_token from what the owner pasted: the whole redirect address, or the token alone."""
+    text = (pasted or "").strip()
+    if "?" in text:
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(text).query))
+        if query.get("status") not in (None, "success"):
+            raise FetchError("the login did not succeed (the address says status is not success) - log in again")
+        text = query.get("request_token", "")
+    if not KITE_CREDENTIAL.match(text):
+        raise FetchError("no request_token found - paste the whole address the browser shows after logging in")
+    return text
+
+
+class KiteClient:
+    """Kite Connect with the owner's key, spaced KITE_INTERVAL apart. The secret, the request token and the access
+    token appear only in the checksum, the form body and the Authorization header; every message leaving here is
+    scrubbed of them. Any refusal stops the run - nothing more is asked. A dropped connection (no answer at all) is
+    not a refusal: a download is asked again after KITE_RETRY_WAITS, then the run stops; the login is never repeated
+    (its request token works once). Found on 22-Nov-2026: the owner's connection was reset after about 2 minutes."""
+
+    def __init__(self, api_key, api_secret, request=http_request, sleep=time.sleep, clock=time.monotonic,
+                 now=lambda: datetime.now(timezone.utc), on_wait=None):
+        self.key, self._secret, self._token = api_key, api_secret, None
+        self.request, self.sleep, self.clock, self.now = request, sleep, clock, now
+        self.on_wait = on_wait or (lambda seconds, reason: None)
+        self.last = None
+        self.requests = self.retries = 0
+        self.gave_up = False
+        self._hidden = [api_secret]
+
+    def _scrub(self, text):
+        text = str(text)
+        for secret in self._hidden:
+            if secret:
+                text = text.replace(secret, "<hidden>")
+        return text
+
+    def _send(self, url, method="GET", data=None):
+        if self.gave_up:
+            raise RateLimited("Kite refused earlier in this run, so it was not asked again - run fetch-kite later")
+        headers = {"X-Kite-Version": "3"}
+        if self._token:
+            headers["Authorization"] = f"token {self.key}:{self._token}"
+        waits = (0,) + (KITE_RETRY_WAITS if method == "GET" else ())
+        why = "the connection to Kite dropped"
+        for attempt, wait in enumerate(waits):
+            if wait:
+                self.on_wait(wait, why)
+                self.sleep(wait)
+            if self.last is not None and self.clock() - self.last < KITE_INTERVAL:
+                self.sleep(KITE_INTERVAL - (self.clock() - self.last))
+            self.last = self.clock()
+            self.requests += 1
+            try:
+                status, body = self.request(url, method=method, headers=headers, data=data)
+            except Exception as e:  # every failure leaves here without a secret
+                if attempt == len(waits) - 1:
+                    self.gave_up = True
+                    raise FetchError(self._scrub(f"Kite could not be asked ({attempt + 1} tries): {e}")) from None
+                self.retries += 1
+                why = "the connection to Kite dropped"
+                continue
+            if status in KITE_TRANSIENT and attempt < len(waits) - 1:   # Kite's gateway, not a refusal
+                self.retries += 1
+                why = f"Kite's server answered HTTP {status} (a temporary error)"
+                continue
+            break
+        retrieved = self.now()
+        if status != 200:
+            self.gave_up = True
+            if status == 403:
+                raise FetchError("Kite says the login is no longer valid (it ends at 6 AM) - run fetch-kite again and log"
+                                 " in; nothing more was asked")
+            raise (RateLimited if status == 429 else FetchError)(
+                self._scrub(f"Kite answered HTTP {status}: {_kite_message(body)} - stopped; nothing more asked in this"
+                            " run"))
+        return body, retrieved
+
+    def login(self, request_token):
+        """Exchange the request token for an access token, kept in memory only. Returns nothing about the owner."""
+        self._hidden.append(request_token)
+        checksum = hashlib.sha256((self.key + request_token + self._secret).encode()).hexdigest()
+        form = urllib.parse.urlencode({"api_key": self.key, "request_token": request_token, "checksum": checksum})
+        body, _ = self._send(KITE_SESSION, "POST", form.encode())
+        try:
+            token = json.loads(body.decode("utf-8"))["data"]["access_token"]
+        except (UnicodeDecodeError, ValueError, KeyError, TypeError):
+            raise FetchError("Kite's login answer had no access token - log in again") from None
+        if not isinstance(token, str) or not KITE_CREDENTIAL.match(token):
+            raise FetchError("Kite's login answer had no usable access token - log in again")
+        self._token = token
+        self._hidden.append(token)
+
+    def fetch(self, url):
+        if not self._token:
+            raise FetchError("not logged in to Kite")
+        return self._send(url)
+
+
+def _kite_message(body):
+    try:
+        return str(json.loads(body.decode("utf-8")).get("message"))[:160]
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        return "no readable message"
+
+
+def kite_history_url(token, from_date, to_date):
+    query = urllib.parse.urlencode({"from": f"{from_date} 00:00:00", "to": f"{to_date} 23:59:59", "continuous": "0",
+                                    "oi": "0"})
+    url = f"{KITE_API}/instruments/historical/{int(token)}/day?{query}"
+    _check_host(url)
+    return url
+
+
+def kite_last_day(now):
+    """The last trading day whose candle may be kept: today only after KITE_DAY_CLOSES India time."""
+    india = now.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    return (india.date() if india.hour >= KITE_DAY_CLOSES else india.date() - timedelta(days=1)).isoformat()
+
+
+def fetch_kite(conn, client, backfill_from, symbols=None, max_companies=None, on_progress=None, on_refused=None):
+    """Read Kite's NSE instrument list, match it to the registry, then fetch the day candles each matched company
+    needs, storing each checked answer as a vintage (ADR-014). A refused answer stores nothing for that company and
+    the run goes on - on_refused hears of it at once; a refusal by Kite stops the run (what was stored stays).
+    Returns a report."""
+    body, _ = client.fetch(KITE_INSTRUMENTS)
+    instruments = read_instruments(body)
+    last_day = kite_last_day(client.now())
+    mapped, unmapped = map_instruments(conn, instruments, last_day)
+    run_id = start_run(conn, len(instruments), mapped, unmapped, body)
+    chosen = [m for m in mapped if m[1] in set(symbols)] if symbols else mapped
+    todo = chosen if max_companies is None else chosen[:max_companies]
+    report = {"run_id": run_id, "listed": len(instruments), "mapped": len(mapped), "unmapped": len(unmapped),
+              "chosen": len(chosen), "companies": 0, "requests": 0, "candles": 0, "set_aside": 0, "readjusted": [],
+              "refused": [], "last_day": last_day, "left": len(chosen) - len(todo)}
+    for number, (isin, symbol, token) in enumerate(todo, 1):
+        try:
+            answers = []
+            for from_date, to_date, reason in plan_requests(conn, isin, last_day, backfill_from):
+                answer, retrieved = client.fetch(kite_history_url(token, from_date, to_date))
+                report["requests"] += 1
+                candles, _ = read_candles(answer, from_date, to_date)
+                if reason == "daily" and readjusted(conn, isin, candles):
+                    report["readjusted"].append(symbol)
+                    answers = []
+                    for f, t, r in chunks(backfill_from, last_day, "readjusted"):
+                        full, at = client.fetch(kite_history_url(token, f, t))
+                        report["requests"] += 1
+                        read_candles(full, f, t)
+                        answers.append((f, t, full, at, r))
+                    break
+                answers.append((from_date, to_date, answer, retrieved, reason))
+            for from_date, to_date, answer, retrieved, reason in answers:   # stored only once every answer is checked
+                _, n, aside = load_fetch(conn, run_id, isin, symbol, token, from_date, to_date, answer, retrieved,
+                                         reason)
+                report["candles"] += n
+                report["set_aside"] += aside
+            report["companies"] += 1
+        except KiteResponseError as e:
+            report["refused"].append(f"{symbol}: {e}")
+            if on_refused:
+                on_refused(f"{symbol}: {e}")
+        if on_progress and number % 100 == 0:
+            on_progress(number, len(todo))
     return report

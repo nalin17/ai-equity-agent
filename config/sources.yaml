@@ -164,6 +164,21 @@ sources:
     reliability_rating: B
     authentication_method: none (public API; requests spaced and backed off - ADR-005)
     schema_description: one object per article - url, url_mobile, title, seendate (UTC, 15-minute steps), socialimage, domain, language, sourcecountry
+  - source_id: kite_connect
+    provider: Zerodha Broking Limited (Kite Connect)
+    source_class: licensed_vendor
+    data_type: daily OHLCV candles for NSE equities, adjusted by the vendor for corporate actions; NSE EQ instrument list
+    endpoint: https://api.kite.trade (/session/token, /instruments/NSE, /instruments/historical/<token>/day)
+    authority: vendor
+    license: Kite Connect terms (kite.trade/terms) - personal use by the account holder, no display to the public, no redistribution; 4(b) restricts databases unless Zerodha permits - permission asked 22-Nov-2026, stored meanwhile by the owner's decision, removed at once by purge-kite if refused (ADR-014)
+    update_frequency: daily after the close; the instrument list once a day
+    historical_coverage: several years of daily candles for instruments listed today; none for delisted securities
+    latency: same evening (fetched after 18:00 India time)
+    revision_policy: the vendor re-adjusts its whole history after each split or bonus; every fetch is a vintage, and an overlapping day that changed triggers a full re-fetch as a new vintage - nothing is overwritten
+    timestamp_semantics: snapshot_no_vintage
+    reliability_rating: B
+    authentication_method: the owner's API key and secret (environment variables KITE_API_KEY, KITE_API_SECRET) and a daily browser login; tokens live in memory only (ADR-014)
+    schema_description: instrument list CSV - instrument_token, exchange_token, tradingsymbol, name, last_price, expiry, strike, tick_size, lot_size, instrument_type, segment, exchange (no ISIN); candles JSON - [timestamp +0530, open, high, low, close, volume]
   - source_id: gdelt_gkg
     provider: The GDELT Project
     source_class: licensed_vendor

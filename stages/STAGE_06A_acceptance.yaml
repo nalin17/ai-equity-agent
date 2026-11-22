@@ -1,0 +1,35 @@
+stage: "6a - daily NSE prices from Zerodha's Kite Connect (vendor-adjusted, versioned, purgeable)"
+status: ACCEPTED_VENDOR_DAILY_PRICES_BASELINE
+architecture: [40B step 6a, 4B.2 rule 1, 4C, 5B, ADR-004, ADR-014]
+proven:
+  - "Kite Connect is asked only at api.kite.trade for the session, the NSE instrument list and daily history (query keys from, to, continuous, oi); every other Kite address - all instruments, other exchanges, quotes, orders, profile, minute candles, the login page - is refused before sending (tested)"
+  - The owner's API key and secret come only from the environment; the request token, the access token and the login answer - with the owner's name and email - are kept in memory for one run and appear in no table, message or address; the access token travels only in the Authorization header; messages are scrubbed of every secret (tested)
+  - Kite's instrument list (plain or gzipped, no ISIN) reaches a company only through its NSE symbol in the registry; unmatched symbols are recorded; two Kite symbols for one company are both refused (tested)
+  - A day-candle answer is used whole or not at all - success status, day timestamps at 00:00 India time inside the asked range, strictly increasing dates, positive finite prices inside low-high, whole non-negative volume; a refused answer stores nothing for that company and the run goes on; a refusal by Kite stops the run (tested)
+  - "Every answer is a vintage; history is asked in chunks of under 2,000 days, then from 10 days before the last stored day; a changed overlapping day (beyond half a paisa) means Zerodha re-adjusted, and the whole history is fetched again as a new vintage - a series is never stitched from two adjustments (tested)"
+  - "Availability (5B): known from our retrieval; under historical replay the vendor's adjusted values are withheld and counted; today's candle is kept only after 18:00 India time (tested)"
+  - "The liquidity band becomes rule se-liquidity-2: NSE's own files first, Kite's days for the rest; the hub gives Kite's days as 'vendor_daily_price', labelled as adjusted, never twice for a day, and judges missing trading days over both (tested)"
+  - Kite tables are append-only; purge-kite removes all Kite data at once and leaves the tables empty and append-only, schema unchanged (tested)
+  - "A dropped connection is not a refusal: a download is asked again after 5, 20 and 60 seconds, then the run stops; the one-time login is never asked again (tested; found live on 22-Nov-2026 when the owner's first full run was reset after 109 companies)"
+  - "Kite's server errors 500/502/503/504 are asked again the same way; 400, 403, 429 and every other status stop the run at once (tested; found live: HTTP 502 after 900 companies)"
+  - "A Kite symbol with -BE or -BZ (NSE's trade-for-trade series of the same shares) reaches its company; -D1, -SM and every other suffix do not; two series of one company at once are both refused (tested; found live: 206 registry companies, e.g. FELDVR-BZ, RTSPOWR-BE)"
+  - "A day candle stamped at another time than 00:00 and both candles of a doubled day are set aside one by one and recorded (kt_problems); the rest of the answer is kept and the day stays missing; a refused company is reported at once (tested; found live: SVLL and OSWALSEEDS 10:00 candles in 2018, SONAMLTD and AHLADA doubled days)"
+  - 43 of 43 deliberate faults in the new code were caught
+  - "Real data (stage.py check --smoke, 22-Nov-2026, on a copy of the owner's database): the hub read the owner's stored Kite days without writing; HDFC Bank's band became Rs 2,128 crore/day over 60 sessions (56 from Kite); purge-kite removed all 1,184,696 Kite rows of the copy and left none"
+  - "Real data (the owner's first live fetch-kite, 22-Nov-2026 15:30 India time, three companies): 8,830 day candles from 1-Jan-2015 to 20-Nov-2026; on all 18 days that also have NSE's own bhavcopy (Aug-Oct 2026), Kite's close and volume equal NSE's exactly"
+  - "Real data (the owner's full runs, 22-Nov-2026): the first stopped after 109 companies on a reset connection and the second after about 900 on HTTP 502 - nothing half-stored, each company's answers stored together - which led to the retries; a 10-company diagnostic found the -BE/-BZ series and the odd old candles. The last run (18:19-18:55 India time): Kite listed 10,338 NSE EQ instruments, 2,582 matched registry companies, 2,581 stored, 6,092 requests, no retry needed, 3,529,546 candles stored in that run and 4,714,239 in all"
+  - "Found in operation, 22-Nov-2026: 5,828 candles set aside - 4,493 stamped at another time than 00:00 (mostly 09:15) in 466 companies, every one between 1-Jan-2016 and 30-Nov-2018 and exactly one per company and day, including the whole of that period for NMDC, Coal India, Petronet and ONGC; and 1,335 doubled days in 57 companies (2015-2023). One company refused whole: MAZDOCK (listed 12-Oct-2020), whose answer begins with a candle dated 4-Dec-2017 that breaks low <= open, close <= high"
+not_claimed:
+  Kite history from 1-Jan-2016 to 30-Nov-2018 for the 466 companies whose candles there are stamped 09:15 etc. (set aside until checked against NSE's own bhavcopies - Stage 6a-2): false
+  MAZDOCK's history (a candle dated before its listing refuses the answer - Stage 6a-2): false
+  prices of delisted companies (Kite has none): false
+  unadjusted (as traded) prices from Kite: false
+  Zerodha's permission to store (asked 22-Nov-2026; stored meanwhile by the owner's decision): false
+  intraday candles, indices or F&O open interest: false
+  historical replay with vendor prices: false
+negative_assertions:
+  Kite candles written into trusted_prices: false
+  series stitched from two adjustments: false
+  token, secret or login answer stored or logged: false
+  Kite address other than the three allowed asked: false
+  partial answer stored: false

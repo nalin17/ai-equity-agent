@@ -42,6 +42,12 @@ Commands:
   show-sentiment SYMBOL [FROM] [TO] [--replay]  the company's public-sentiment evidence as known now:
                             liquidity gate, filings with a direction, sentiment-eligible headlines, and
                             what was left out and why - ADR-013
+  fetch-kite [--from YYYY-MM-DD] [--symbols A,B] [--max N]  log in to Zerodha in your browser, then fetch
+                            daily candles for every NSE company in the registry from Kite Connect with your
+                            own key (KITE_API_KEY, KITE_API_SECRET); the first run goes back to --from
+                            (default 2015-01-01), later runs add the new days - ADR-014
+  purge-kite --yes-delete-all-kite-data  remove ALL Kite data from the database at once (if Zerodha
+                            refuses storage, or you end the Kite terms) - cannot be undone
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order (also the
                             FII/DII files fii-dii-nse-latest.csv and fii-dii-combined-latest.csv)
@@ -57,11 +63,13 @@ retrieval time: it is the moment the data verifiably entered this system
 News is the one exception: fetch-news asks GDELT, whose terms allow automated use
 (ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), fetch-macro asks FRED's API
 with your own key (ADR-008), fetch-india asks MoSPI's API (ADR-009), fetch-events reads
-three central banks' feeds and FRED's release calendar (ADR-010), and fetch-gkg reads GDELT's
-GKG files (ADR-013) - nothing else.
+three central banks' feeds and FRED's release calendar (ADR-010), fetch-gkg reads GDELT's
+GKG files (ADR-013), and fetch-kite asks Zerodha's Kite Connect with your own key and daily
+login (ADR-014) - nothing else.
 Article links are never opened.
 """
 import sys
+import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -88,6 +96,8 @@ from ingestion.news_fetch import fred_key  # noqa: E402
 from ingestion.news_fetch import MOSPI_INTERVAL, MospiClient, fetch_india_request  # noqa: E402
 from ingestion.news_fetch import CENTRAL_BANK_FEEDS, TooSoon, fetch_central_bank, fetch_release_calendar  # noqa: E402
 from ingestion.news_fetch import GKG_INTERVAL, GKG_MAX_FILES, GkgClient, fetch_gkg  # noqa: E402
+from ingestion.news_fetch import KiteClient, fetch_kite, kite_credentials, kite_request_token  # noqa: E402
+from ingestion.kite_prices import BACKFILL_FROM, KiteResponseError, purge as purge_kite  # noqa: E402
 from ingestion.macro_events import ATTRIBUTION as EVENTS_ATTRIBUTION, CALENDAR_RELEASES, macro_events  # noqa: E402
 from ingestion.macro_events import scheduled_releases, sync_declared_events  # noqa: E402
 from ingestion.event_routes import sync_routes  # noqa: E402
@@ -869,6 +879,70 @@ def show_sentiment(args):
     conn.close()
 
 
+KITE_LOGIN = "https://kite.zerodha.com/connect/login?v=3&api_key="   # opened in the owner's browser, not by this code
+
+
+def fetch_kite_prices(args):
+    usage = "Usage: python manage.py fetch-kite [--from YYYY-MM-DD] [--symbols A,B] [--max N]"
+    options, i = {}, 0
+    while i < len(args):
+        if args[i] in ("--from", "--symbols", "--max") and i + 1 < len(args):
+            options[args[i]] = args[i + 1]
+            i += 2
+        else:
+            raise SystemExit(usage)
+    backfill = strict_iso_date(options.get("--from", BACKFILL_FROM)).isoformat()
+    limit = options.get("--max")
+    if limit is not None and (not limit.isdigit() or int(limit) < 1):
+        raise SystemExit("--max must be a whole number of companies, 1 or more")
+    symbols = options["--symbols"].split(",") if "--symbols" in options else None
+    try:
+        key, secret = kite_credentials()
+    except FetchError as e:
+        raise SystemExit(str(e))
+    print("1. Zerodha's login page opens in your browser (if not, open this address yourself):")
+    print("   " + KITE_LOGIN + key)
+    webbrowser.open(KITE_LOGIN + key)
+    print("2. Log in as usual. The browser then goes to an address starting with http://127.0.0.1:5000/kite -")
+    print("   the page itself will not load; that is expected.")
+    pasted = input("3. Copy that whole address from the address bar, paste it here and press Enter: ")
+    log = setup_logging()
+    conn = open_db()
+    client = KiteClient(key, secret, on_wait=lambda seconds, why: log.info("%s - asking again in %s seconds", why,
+                                                                           seconds))
+    try:
+        client.login(kite_request_token(pasted))
+        log.info("Logged in to Kite. Fetching daily candles - at most 3 requests a second")
+        result = fetch_kite(conn, client, backfill, symbols, int(limit) if limit else None,
+                            on_progress=lambda n, total: log.info("... %s of %s companies", n, total),
+                            on_refused=lambda line: log.warning("REFUSED (nothing stored for it): %s", line))
+    except (FetchError, KiteResponseError) as e:   # candles already stored stay; the next run goes on from there
+        conn.close()
+        raise SystemExit(f"STOPPED - {type(e).__name__}: {e}")
+    refused, readjusted = result.pop("refused"), result.pop("readjusted")
+    log.info("Kite: %s", result)
+    if refused:
+        print(f"  {len(refused)} companies refused (each named above, nothing stored for them)")
+    if readjusted:
+        print(f"  re-adjusted by Zerodha, whole history fetched again: {', '.join(readjusted[:10])}")
+    if result["left"]:
+        print(f"  {result['left']} more companies are due - run fetch-kite again")
+    log.info("Kite requests: %s (asked again after a dropped connection: %s). Prices: Zerodha Kite Connect, adjusted"
+             " for corporate actions by Zerodha", client.requests, client.retries)
+    conn.close()
+
+
+def purge_kite_data(args):
+    if args != ["--yes-delete-all-kite-data"]:
+        raise SystemExit("Usage: python manage.py purge-kite --yes-delete-all-kite-data\n"
+                         "Removes ALL Kite data from the database at once. It cannot be undone.")
+    log = setup_logging()
+    conn = open_db()
+    removed = purge_kite(conn)
+    log.info("All Kite data removed: %s candles (Kite terms 9(b), ADR-014)", removed)
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -1021,6 +1095,8 @@ COMMANDS = {
     "show-evidence": show_evidence,
     "fetch-gkg": fetch_gkg_files,
     "show-sentiment": show_sentiment,
+    "fetch-kite": fetch_kite_prices,
+    "purge-kite": purge_kite_data,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,
