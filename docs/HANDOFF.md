@@ -1,24 +1,25 @@
 # HANDOFF (compact) - AI Self-Learning Equity Research Agent
 
-Compact handoff written 2026-10-05 (end of the fifth chat: hand-over tools, Stage 11). Read THIS file fully;
-read other files only when a task needs them (section 9 says where). Governing architecture:
-`docs/Master_Architecture_v2_2_0_FROZEN.md` (v2.2.0, frozen - amend only by insertion with an ADR, 46/46A).
-Older detail is in git history: `git show 6cdf2fe:docs/HANDOFF.md` (long handoff up to Stage 10D).
+Compact handoff written 2026-11-22 (end of the sixth chat: Stage 12A). Read THIS file fully, then
+`data\handover\stage12\PLAN.md` (Stage 12 decisions, measured facts, 12B plan); read other files only when a task
+needs them (section 9 says where). Governing architecture: `docs/Master_Architecture_v2_2_0_FROZEN.md` (v2.2.0,
+frozen - amend only by insertion with an ADR, 46/46A). Older detail is in git history: `git show
+6cdf2fe:docs/HANDOFF.md` (long handoff up to Stage 10D), `git show 9c3d2d3:docs/HANDOFF.md` (after Stage 11).
 
-## 0. State (05-Oct-2026)
+## 0. State (22-Nov-2026)
 | Item | State |
 |---|---|
-| Last pushed commit | Stage 11 Knowledge/Event Hub (ADR-012), committed by `stage.py commit stage11` - see `git log -1`. Before it: `2994320` Stage 10E. 957 tests. |
-| Stage 11 | ACCEPTED: check PASS (957 tests, 24/24 faults, smoke on a database copy), install PASS 05-Oct 22:43, live `show-evidence HDFCBANK` verified (record in stages/STAGE_11_acceptance.yaml). |
-| Database | `data/equity.sqlite`, schema 20 (Stage 11 adds no migration), 19 sources. Backups `data/equity_before_*.sqlite` (latest `_11`). |
-| First check each chat | `python data\handover\tools\status.py --ci` (one screen: git, tests, stage report, database, freshness, gaps, calendar, Downloads, CI). |
-| Next build | Stage 12 = Sentiment Adapter (40B step 10) - owner's choice 05-Oct ("hub first, then sentiment, then choose"). Needs news data: the owner should run `fetch-news` daily from now. |
+| Last pushed commit | Stage 12A GKG headlines and sentiment inputs (ADR-013), committed by `stage.py commit stage12a` - see `git log -1`. Before it: `9c3d2d3` Stage 11. 1,010 tests. |
+| Stage 12A | ACCEPTED: check PASS (1,010 tests, 39/39 faults, smoke with the real GKG samples on a database copy), install PASS 22-Nov 12:17, live `fetch-gkg` (91 files, 6,659 rows kept) and `show-sentiment HDFCBANK` verified (record in stages/STAGE_12A_acceptance.yaml). |
+| Database | `data/equity.sqlite`, schema 21, 20 sources. Backups `data/equity_before_*.sqlite` (latest `_12a`). |
+| First check each chat | `python data\handover\tools\status.py --ci` (one screen: git, tests, stage report, database, freshness incl. GKG, gaps, calendar, Downloads, CI). |
+| Next build | Stage 12B = FinBERT headline scorer (owner's choice 22-Nov) - first a new price-echo rule version se-echo-2 with the HDB headline as a named test (section 8). Then the owner chooses: BusinessLine/The Hindu + RBI RSS (approved 09-Nov) or 40B step 12. |
 
-### 0.1 Verify Stage 11 at the start of the next chat
-`python data\handover\tools\status.py --ci` must show: HEAD = the Stage 11 commit, tree clean, origin/main
-equal, tests 957 passed, CI success for HEAD. If `git log -1` is still Stage 10E, the owner had not finished:
-`python data\handover\stage11\patch_stage11_record.py`, then `python data\handover\tools\stage.py commit stage11`.
-status.py fixed 05-Oct after the install: it counts untracked files by their '??' lines.
+### 0.1 Verify Stage 12A at the start of the next chat
+`python data\handover\tools\status.py --ci` must show: HEAD = the Stage 12A commit, tree clean, origin/main
+equal, tests 1010 passed, CI success for HEAD. If `git log -1` is still Stage 11 (9c3d2d3), the owner had not
+finished: `python data\handover\stage12a\patch_stage12a_record.py`, then
+`python data\handover\tools\stage.py commit stage12a`.
 
 ## 1. Owner and working style
 - Owner (GitHub nalin17) is NOT a developer: pastes PowerShell lines, replies "done". Plain language, they/them.
@@ -56,10 +57,11 @@ status.py fixed 05-Oct after the install: it counts untracked files by their '??
 ## 3. Rules that must never be broken
 1. NSE: no automated collection - hand downloads only (ADR-004). No scrapers, no nsepython/jugaad, no NSE mirrors.
 2. LICENSED ONLY: no data used against its terms; repos copying NSE data not used. TradingView never.
-3. Only `src/ingestion/news_fetch.py` opens network connections (static tests), allow-list of 7 hosts, exact
+3. Only `src/ingestion/news_fetch.py` opens network connections (static tests), allow-list of 8 hosts, exact
    paths, no redirects: api.gdeltproject.org, www.sebi.gov.in (/sebirss.xml), api.stlouisfed.org (series,
    observations, release/dates), api.mospi.gov.in (3 paths), www.federalreserve.gov (/feeds/press_monetary.xml),
-   www.ecb.europa.eu (/rss/press.html), www.boj.or.jp (/en/rss/whatsnew.xml). New host = owner approval + ADR.
+   www.ecb.europa.eu (/rss/press.html), www.boj.or.jp (/en/rss/whatsnew.xml), data.gdeltproject.org
+   (/gdeltv2/lastupdate.txt and /gdeltv2/<slot>.gkg.csv.zip - ADR-013). New host = owner approval + ADR.
 4. Secrets (FRED_API_KEY, user env var) never in chat, repo, logs, files, URLs stored, messages.
 5. Certificates always checked. Legacy TLS only for MoSPI; extra root (Sectigo E46, fingerprint-checked) only for ECB.
 6. Never repair, fill or carry forward data: refuse, quarantine, or classify missing (MissingClass, 4C).
@@ -70,7 +72,13 @@ status.py fixed 05-Oct after the install: it counts untracked files by their '??
 10. Macro series, events and flows are context only - never covered securities, targets or benchmarks.
 11. An event without an issuer reaches a security only through a declared, recorded route (config/event_routes.yaml);
    only ingestion/event_routes.py and knowledge/hub.py may call attribute()/events_for() (static test).
-12. RBI not used (terms). Commercial Indian news sites not sources. NSDL and CDSL FPI data not stored (terms).
+12. RBI site data not used (terms; its press-release RSS is approved for the stage after 12). Commercial Indian
+   news sites are not sources (their headlines reach us only as GDELT's GKG metadata - headline, link, site, time;
+   links never opened); their RSS only after a written yes in data\handover\research\permissions\ and an ADR.
+   NSDL and CDSL FPI data not stored (terms).
+14. Sentiment (4B): GDELT tone is whole-article, never company sentiment; a story counts for a company only as
+   the subject of its headline (nw-entity-1); price echo is attention only; below the liquidity band sentiment is
+   refused, never down-weighted; no news is a gap, never neutral; rules are versioned - a change is a new rule id.
 13. Static rules: `date.fromisoformat` only in core/dates.py; MissingClass and ExtractionConfidence values never as
    string literals elsewhere; bare token REVIEW banned; env reads only in news_fetch.py.
 
@@ -90,12 +98,17 @@ over 260 characters fail (keep test copies under a short %TEMP% folder); test_ou
 - SQLite (ADR-001); pytest (pytest.ini: pythonpath src); CI `.github/workflows/tests.yml` (Linux, Py 3.14);
   requirements: pytest, pyyaml only; network via stdlib urllib only.
 - Logs `logs/app.log`; downloads land in `C:\Users\nalin\Downloads`, ingest-inbox moves them to `data\inbox`.
-- Owner's daily routine: `fetch-sebi` (feed keeps ~3 working days - daily!), `fetch-news`, `fetch-macro`,
-  `fetch-india`, `fetch-events`; trading evenings: download both CSVs from https://www.nseindia.com/reports/fii-dii
-  then `ingest-inbox`. Calendars (config/market_calendars.yaml) end 2026-12-31: regenerate before (xcal venv in
-  `%TEMP%\xcal`, tools make_calendar_yaml.py; show-macro and status.py warn 60 days before).
+- Owner's daily routine: `fetch-sebi` (feed keeps ~3 working days - daily!), `fetch-gkg` (GDELT GKG headlines,
+  ~0.4 GB a day downloaded, little stored; catches up a week of unread slots), `fetch-macro`, `fetch-india`,
+  `fetch-events`; trading evenings: download both CSVs from https://www.nseindia.com/reports/fii-dii then
+  `ingest-inbox`. `fetch-news` (DOC API) is refused by GDELT since 05-Oct - not in the routine.
+- Calendars (config/market_calendars.yaml) end 2026-12-31. Owner's choice 22-Nov: regenerate all three in
+  December once NSE publishes its 2027 holiday list (owner downloads it). exchange_calendars 4.13.3 has NO XBOM
+  2027 dates; Windows Application Control blocked pandas 3.1.1's DLL in a %TEMP% venv on 09-Nov - use an older
+  pandas or a pandas-free generator, and take XBOM 2027 from NSE's circular if the library still lacks it.
+- FinBERT trial venv `%TEMP%\fbt` (torch 2.15 CPU + transformers 5.24 import fine on this PC, 22-Nov).
 
-## 6. Stages done (records in stages/*_acceptance.yaml, decisions in docs/decisions/ADR-001..012)
+## 6. Stages done (records in stages/*_acceptance.yaml, decisions in docs/decisions/ADR-001..013)
 | Stage | Commit | 40B step | What |
 |---|---|---|---|
 | 0-6 | 9773aa2..2606dea | 1-5 | skeleton, registry, trust chain, PIT store, universe |
@@ -107,9 +120,10 @@ over 260 characters fail (keep test copies under a short %TEMP% folder); test_ou
 | 10C, 10C-2 | 36450db, bfa5c8f | 9a | FRED/ALFRED 25 series; MoSPI CPI/IIP/GDP; market calendars |
 | 10D | 6cdf2fe | 9b | Fed/ECB/BoJ feeds, FRED release calendar, derived release events, routes |
 | 10E | 2994320 | 9c | NSE FII/DII daily flows by hand download |
-| 11 | (section 0.1) | 11 | Knowledge/Event Hub: one evidence object, read-only, gaps always said |
-Tests: 957 after Stage 11. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58, 10D 101/101, 10E 31/31,
-11 24/24.
+| 11 | 9c3d2d3 | 11 | Knowledge/Event Hub: one evidence object, read-only, gaps always said |
+| 12A | (section 0.1) | 10 | GKG headlines (raw files not kept), filing directions, price echo, liquidity band, public sentiment in the hub (unscored) |
+Tests: 1,010 after Stage 12A. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-2 58/58, 10D 101/101, 10E 31/31,
+11 24/24, 12A 39/39.
 
 ## 7. Code map (src/)
 - core: config, database (migrate/rollback/run_in_transaction), dates (strict_iso_date), sessions (time zones),
@@ -119,30 +133,42 @@ Tests: 957 after Stage 11. Fault checks: 10 32/32, 10B 21/21, 10C 63/63, 10C-2 5
   (fact_as_of).
 - universe: entities (resolve by ISIN/alias, validate_isin), equity_list, historical_universe, identity_bridges.
 - ingestion: source_registry, market_adapters, corporate_actions/nse_corporate_actions, nse_financial_results,
-  nse_announcements (events), intake, gdelt_news (stories), sebi_releases (releases), macro_context (FRED
-  observations/latest), india_macro (MoSPI), macro_events (macro_events, scheduled_releases), event_routes
-  (attribute, events_for), nse_flows (flows, missing_days), news_fetch (the ONLY network code).
-- knowledge (Stage 11): evidence (Domain, Attribution, GapNature, Evidence, EvidenceGap, Bundle), hub (gather,
-  clamp_window; adapters per domain; NOT_BUILT domains).
+  nse_announcements (events), intake, gdelt_news (stories, EntityReader nw-entity-1), gdelt_gkg (load_gkg,
+  extract, stories, stored_slots; tables gk_*), sebi_releases (releases), macro_context (FRED observations/latest),
+  india_macro (MoSPI), macro_events (macro_events, scheduled_releases), event_routes (attribute, events_for),
+  nse_flows (flows, missing_days), news_fetch (the ONLY network code; GkgClient, gkg_slots, fetch_gkg).
+- knowledge: evidence (Domain, Attribution, GapNature, Evidence, EvidenceGap, Bundle), hub (gather, clamp_window;
+  adapters per domain incl. _gkg and _sentiment; hub-2; NOT_BUILT = derivatives, alternative data), sentiment
+  (rules an-direction-1, se-echo-1, se-eligible-1, se-liquidity-1: filing_direction, price_echo, eligibility,
+  liquidity).
 - features/price_series.py. Empty packages for later steps: abstention, calibration, experiments, ledger, models,
   regimes, research, targets, validation.
 - manage.py commands: init-db, sources, load-*, ingest-prices, ingest-inbox, checklist, compare-series,
-  bridge-isins, show-fundamentals/-events/-news/-sebi/-macro/-india/-macro-events/-flows/-evidence,
-  fetch-news/-sebi/-macro/-india/-events, report.
-- config: sources.yaml (19), news_names.yaml, macro_series.yaml (25), india_macro_series.yaml (9),
+  bridge-isins, show-fundamentals/-events/-news/-sebi/-macro/-india/-macro-events/-flows/-evidence/-sentiment,
+  fetch-news/-sebi/-macro/-india/-events/-gkg, report.
+- config: sources.yaml (20), news_names.yaml (6 companies - only these can be a headline's subject),
+  macro_series.yaml (25), india_macro_series.yaml (9),
   market_calendars.yaml, declared_events.yaml and event_routes.yaml (owner-owned, empty).
 
 ## 8. Next steps and open items
-- Stage 12 = Sentiment Adapter (40B step 10; architecture 4B 986-1089, 9A 1640-1662): sentiment-eligible stories
-  only, one story one vote, below the liquidity threshold refused not down-weighted (4B.2), polarity is not
-  issuer impact (4B.5). It plugs into the hub as Domain.PUBLIC_SENTIMENT (remove it from NOT_BUILT). Source
-  options need terms research first: GDELT tone (another GDELT path = owner approval + ADR) or Alpha Vantage
-  news sentiment (owner's key ALPHAVANTAGE_API_KEY; probe `data\handover\tools\av_probe.py`). Data first: the
-  owner's first live `fetch-news` (nw_responses still 0), then daily.
-- Owner to do: send NSE research request (`data\handover\nse_request\`), send NSDL email
-  (`data\handover\nsdl_request\email_to_nsdl.txt`), start daily `fetch-news`.
-- Decisions pending: 30-company coverage cohort (3A.2 rule 5, preregistered); price history for step 6a (NSE
-  research data, else an authorised vendor with owner approval - the true bottleneck: 6 trading days of prices).
+- Stage 12B = FinBERT scorer (plan in data\handover\stage12\PLAN.md section 3, 12B). FIRST: se-echo-2 with the
+  live false negative 'HDFC Bank (HDB) Finds Its Spark Amid Wall Street Selloff' (a US ADR's price move, no stock
+  word, no percentage) as a named test - before any headline is scored. Then: owner downloads ProsusAI/finbert
+  (model.safetensors, config.json, vocab.txt, tokenizer files; CC BY-NC-SA 4.0 - never in the repo) by hand to
+  data\models\finbert\; pin HF commit + sha256 per file; local_files_only; torch/transformers in
+  requirements-scorer.txt, not requirements.txt (CI unchanged); raw 3-class probabilities stored, never flipped;
+  several companies in one headline = uncertain; filing-vs-headline disagreement recorded as conflict; scores of
+  headlines before the model's training cutoff refused for replay; ADR-014.
+- After 12B the owner chooses: BusinessLine/The Hindu RSS + RBI press-release RSS (approved 09-Nov; conditions in
+  data\handover\STAGE12_BRIEF.md) or 40B step 12. Proposed, not approved: NSE PIT/SAST/pledge/bulk-deal CSVs.
+- Owner to do: daily `fetch-gkg` and the feeds (section 5); send NSE research request (`data\handover\nse_request\`)
+  and NSDL email (`data\handover\nsdl_request\email_to_nsdl.txt`); save any publisher replies (Moneycontrol, Mint,
+  Business Standard, ET - asked 09-Nov) in data\handover\research\permissions\; December: NSE 2027 holiday list.
+- Decisions pending: 30-company coverage cohort (3A.2 rule 5, preregistered) - also decides which companies get
+  news names; price history for step 6a (NSE research data, else an authorised vendor with owner approval - the
+  true bottleneck: 6 trading days of prices - 20/21-Aug, 21/22-Sep, 30-Sep, 01-Oct-2026; the liquidity band
+  ignores sessions older than 120 days, so from 20-Dec-2026 sentiment is refused for every company unless at
+  least 5 newer bhavcopies are loaded by hand).
 - Remaining 40B order after 12: 12 Feature Factory, 13 Target Engine, 14 Research Agent v0.1 (evidence selection
   30A.1 and supporting/contradictory/missing sets 30A.2 build on the hub), 15 Prediction Ledger, 16 Shadow,
   17-23. Steps 13-16 are the critical path (3F); 6a runs alongside.

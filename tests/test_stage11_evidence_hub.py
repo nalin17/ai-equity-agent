@@ -253,9 +253,10 @@ def test_news_reaches_a_company_only_when_proven_to_name_it(news, world):
     story = one(bundle, kind="news_story")
     assert story.value == REAL["srivatsan_banking"][1] and story.attribution == Attribution.DIRECT
     assert story.extraction_confidence == ExtractionConfidence.NAME_IN_HEADLINE_AND_LINK
-    [excluded] = bundle.gaps_of(Domain.NEWS_EXTERNAL)
+    [excluded] = [g for g in bundle.gaps_of(Domain.NEWS_EXTERNAL) if g.component == "news"]
     assert (excluded.nature, excluded.count) == (GapNature.EXCLUDED, 1)   # found by the search, never named
-    [degraded] = gather(world.c, AFTER, CURRENT, HDFC).gaps_of(Domain.NEWS_EXTERNAL)
+    [degraded] = [g for g in gather(world.c, AFTER, CURRENT, HDFC).gaps_of(Domain.NEWS_EXTERNAL)
+                  if g.component == "news"]
     assert degraded.nature == GapNature.DEGRADED   # no article read yet: said, not a crash (4E)
 
 
@@ -326,8 +327,7 @@ def test_release_dates_known_in_advance_may_lie_ahead_of_the_window(world):
 def test_domains_without_an_adapter_are_always_named_as_missing(world):
     bundle = gather(world.c, AFTER, CURRENT)
     not_built = {g.domain for g in bundle.gaps if g.nature == GapNature.NOT_BUILT}
-    assert not_built == set(NOT_BUILT) == {Domain.PUBLIC_SENTIMENT, Domain.DERIVATIVES_POSITIONING,
-                                           Domain.ALTERNATIVE_DATA}
+    assert not_built == set(NOT_BUILT) == {Domain.DERIVATIVES_POSITIONING, Domain.ALTERNATIVE_DATA}   # 12A: sentiment
     assert bundle.counts()[Domain.PUBLIC_SENTIMENT] == 0
 
 

@@ -164,6 +164,21 @@ sources:
     reliability_rating: B
     authentication_method: none (public API; requests spaced and backed off - ADR-005)
     schema_description: one object per article - url, url_mobile, title, seendate (UTC, 15-minute steps), socialimage, domain, language, sourcecountry
+  - source_id: gdelt_gkg
+    provider: The GDELT Project
+    source_class: licensed_vendor
+    data_type: news article metadata from the Global Knowledge Graph - link, page title, site, GDELT's processing time, locations and whole-article tone; only India-relevant rows are stored
+    endpoint: https://data.gdeltproject.org/gdeltv2/ (lastupdate.txt and YYYYMMDDHHMMSS.gkg.csv.zip, GKG 2.1, tab-separated, zipped)
+    authority: secondary
+    license: GDELT open data - unlimited use including commercial; every use must cite the GDELT Project with a link to https://www.gdeltproject.org/ ; article links are never opened (ADR-005, ADR-013)
+    update_frequency: every 15 minutes
+    historical_coverage: GKG 2.1 files from February 2015; files are asked for at least 75 minutes after their slot
+    latency: 75 minutes or more after the slot (Google's cache keeps a 404 for files asked for too early)
+    revision_policy: a link is recorded once, from the first file carrying it; a later file with another headline for it is a recorded conflict; the raw file is not kept - its name, size, md5 and sha256 are
+    timestamp_semantics: publication_time
+    reliability_rating: B
+    authentication_method: none (public files; requests spaced, any refusal stops the run - ADR-013)
+    schema_description: 27 tab-separated fields per article - GKGRECORDID, DATE (UTC slot YYYYMMDDHHMMSS), SourceCollectionIdentifier, SourceCommonName, DocumentIdentifier (link), counts, themes, V1LOCATIONS, persons, organisations, V1.5TONE, dates, GCAM, images, quotations, all names, amounts, translation, V2EXTRASXML with PAGE_TITLE
 
   - source_id: sebi_rss
     provider: SEBI

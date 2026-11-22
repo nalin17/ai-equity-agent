@@ -1,0 +1,39 @@
+stage: "12A - GDELT GKG headlines and public-sentiment inputs (filing directions, eligible headlines, liquidity band)"
+status: ACCEPTED_SENTIMENT_INPUTS_BASELINE
+architecture: [40B step 10, 4B.1, 4B.2 rules 1 3 4, 4B.3, 4B.4, 4B.5, 4C, 4D, 4E, 5B, 9A, ADR-005, ADR-013]
+proven:
+  - "GDELT's GKG 2.1 files are read from data.gdeltproject.org only at /gdeltv2/lastupdate.txt and /gdeltv2/<slot>.gkg.csv.zip, over https; a slot younger than 75 minutes is never asked for; a 404 is 'not yet', never 'no news'; any other refusal stops the run and nothing more is asked (tested)"
+  - A GKG file is used whole or not at all - one member named for its slot, UTF-8, 27 fields in every row, every row dated its slot, GDELT's md5 when listed; the raw file is not kept, its name, size, md5 and sha256 are; only India-relevant rows are stored (located in India, an Indian outlet, or a declared news name in the headline) (tested)
+  - A row without a web link, a headline or a readable tone is refused and recorded; a link is stored once; the same link with another headline is a recorded conflict; other bytes under a stored file name are refused; every GKG table is append-only (tested)
+  - "Availability (5B): GDELT's slot + 15 minutes, or our retrieval if earlier; current-decision use waits for our retrieval, historical replay for GDELT's time (tested)"
+  - Headlines are stored verbatim and compared with HTML entities decoded; a company is a headline's subject only when its declared name is in the headline and the link, alone and not a list item (rule nw-entity-1); an organisation named only in the body is never attributed; changed news names start a new reading, and until then the hub says the headlines are unread (tested)
+  - "One story is one vote: copies with the same distinctive headline within 72 hours are one story (rule nw-dedup-1) (tested)"
+  - A filing has a direction only when NSE's subject has one (rule an-direction-1) - order wins, commercial production and capacity positive; defaults, insolvency, disruptions, strikes, a statutory auditor's resignation and postponed production negative; credit ratings, auditor changes, regulatory actions and everything else unknown, never guessed; opposite subjects conflicting, never netted (tested)
+  - "Price echo (rule se-echo-1): round-ups, gainers and losers, stock tips, 52-week and circuit headlines and a stock's own move are attention only - including a move written without a stock word ('Airtel gains 3%'), while business figures ('Q2 profit jumps 22%', 'retail sales fall 24%') are not echo; every case is the shape of a real headline in GDELT's files of 6-Nov-2026 (tested)"
+  - "The liquidity band (rule se-liquidity-1, 4B.2 rule 1): median close x volume over the last stored sessions known at the decision, none older than 120 days, at least Rs 25 crore from at least 5 sessions; exactly Rs 25 crore is admitted; stale prices do not count; below it sentiment is refused, never down-weighted; under historical replay prices without a proven publication time are withheld (tested)"
+  - The hub gives GKG stories naming the company as news with their sentiment eligibility and GDELT's whole-article tone labelled as such, and as public sentiment only the filings with a direction and the eligible headlines - unscored, without article tone; no filing and no headline is a recorded gap, never neutral; unread GKG slots of the window are named as missing; polarity and sentiment features are said to be missing; the hub still only reads (tested)
+  - 39 of 39 deliberate faults in the new code were caught
+  - "Real data (stage.py check --smoke, 22-Nov-2026, on a copy of the owner's database): GDELT's five sample files of 6 and 8 Nov 2026 - 4,270 rows, 598 India-relevant kept, 1 refused (no headline); one headline names a declared company as its subject (HDFC Bank, 'shares rally 16% in 4 sessions') and is price echo, so attention only; liquidity band from the 6 stored sessions - HDFC Bank, Reliance, TCS, Bajaj Finance and HDFC Life inside, VST Tillers (about Rs 4 crore a day) refused; 0 evidence after the decision time, 0 duplicate ids, 0 writes by the hub"
+  - "Real data: install PASS on the owner's computer (22-Nov-2026 12:17 India time) - 7 new and 7 patched files equal the checked ones; schema 20 -> 21, sources 19 -> 20; 1,010 tests passed"
+  - "Real data (the owner's first live fetch-gkg, 22-Nov-2026 12:18-12:21 India time): 91 of 91 due files read (slots 21-Nov 07:00 to 22-Nov 05:30 UTC), 222 MB in about 3 minutes, 92 requests, no refusal; 52,552 rows, 6,659 India-relevant kept (5,774 located in India, 3,340 from Indian outlets, 3 with a declared name in the headline), 0 rows refused, 0 conflicts; GDELT's md5 was checked for no file - lastupdate.txt lists only the newest slot, always younger than 75 minutes - so each file's integrity rests on the zip's own CRC"
+  - "Real data (the owner's show-sentiment HDFCBANK, 22-Nov-2026): window 2026-10-23 to 2026-11-22; band admitted (Rs 2,622 crore/day over 6 sessions); 7 filings without a readable direction excluded; 1 sentiment-eligible headline, unscored; 90 of 2,924 GKG slots of the window read and the other 2,834 named as missing; three other headlines name Bajaj Finance and HDFC Life only as items of lists (stock tips, deposit rates) - attention only"
+  - "Found in operation (4B.4 rule 6), 22-Nov-2026: the one eligible headline, 'HDFC Bank (HDB) Finds Its Spark Amid Wall Street Selloff' (insidermonkey.com), is about the US-listed ADR's price move - a price echo that se-echo-1 does not catch (no stock word, no percentage). It stays unscored; Stage 12B adds it as a named test with a new rule version (se-echo-2) before any headline is scored"
+not_claimed:
+  price echo of a move written without a stock word or a percentage (found 22-Nov; se-echo-2 in Stage 12B): false
+  GDELT's md5 check of files older than the newest slot (the zip's CRC is checked): false
+  headline polarity (FinBERT scorer, Stage 12B): false
+  sentiment level, change, velocity, dispersion, novelty, crowding, source quality or spam likelihood: false
+  abnormal-velocity flag without a registered event (4B.2 rule 3): false
+  direction of credit ratings, auditor changes or regulatory actions (only in the filing's PDF): false
+  de-duplication between GKG and DOC API stories or between a story and the filing it repeats: false
+  attribution of companies without declared news names: false
+  sentiment under historical replay before prices have a proven publication time: false
+negative_assertions:
+  GDELT tone used as company sentiment: false
+  no news converted into neutral sentiment: false
+  sentiment down-weighted instead of refused below the liquidity band: false
+  filing direction guessed from an ambiguous subject: false
+  body-only mention attributed to a company: false
+  raw GKG file kept: false
+  host other than the eight allowed contacted: false
+  hub writing to the database: false

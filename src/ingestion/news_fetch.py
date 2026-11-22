@@ -1,6 +1,12 @@
 """Fetching news from GDELT's DOC 2.0 API (ADR-005), SEBI's RSS feed (ADR-006), macro series
-from FRED's API (ADR-008), India's macro statistics from MoSPI's API (ADR-009), and three central
-banks' official feeds and FRED's release calendar (ADR-010).
+from FRED's API (ADR-008), India's macro statistics from MoSPI's API (ADR-009), three central
+banks' official feeds and FRED's release calendar (ADR-010), and GDELT's bulk GKG files (ADR-013).
+
+GKG files (ADR-013): on data.gdeltproject.org only lastupdate.txt and /gdeltv2/<slot>.gkg.csv.zip are asked for,
+over https (GDELT lists http addresses, which only redirect - redirects stay refused). A slot is asked for only
+when at least 75 minutes old: Google's cache keeps a 404 for up to an hour for a file asked for before upload, so
+a 404 means 'not yet', never 'no news'. Any other refusal stops the run. The file is checked against GDELT's md5
+when lastupdate.txt lists it; it is never kept - only its India-relevant rows are stored (gdelt_gkg.load_gkg).
 
 This is the ONLY module in the project allowed to open a network connection, and it contacts
 only the hosts in ALLOWED_HOSTS - on SEBI's site only the one feed address, SEBI_FEED, on each
@@ -46,6 +52,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from data_quality.trust_chain import NoDataError
+from ingestion.gdelt_gkg import MIN_AGE as GKG_MIN_AGE, SLOT as GKG_SLOT, GkgFileError, file_name_for, load_gkg
+from ingestion.gdelt_gkg import read_lastupdate, slot_of
 from ingestion.gdelt_news import MAX_ARTICLES, RATE_LIMIT_NOTICE, load_response, news_names, read_response
 from ingestion.india_macro import API_PATHS as MOSPI_DATASET_PATHS, MAX_PAGES, MospiResponseError, load_mospi_pages
 from ingestion.india_macro import page_params, read_page
@@ -57,7 +65,15 @@ from provenance.availability import parse_timestamp
 from provenance.raw_store import ArtifactError
 
 ALLOWED_HOSTS = frozenset({"api.gdeltproject.org", "www.sebi.gov.in", "api.stlouisfed.org", "api.mospi.gov.in",
-                           "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp"})
+                           "www.federalreserve.gov", "www.ecb.europa.eu", "www.boj.or.jp", "data.gdeltproject.org"})
+GKG_HOST = "data.gdeltproject.org"
+GKG_BASE = "https://data.gdeltproject.org/gdeltv2/"
+GKG_LASTUPDATE = GKG_BASE + "lastupdate.txt"     # with GKG files, the only addresses on this host (ADR-013)
+GKG_PATH = re.compile(r"^/gdeltv2/\d{14}\.gkg\.csv\.zip$")
+GKG_INTERVAL = 2.0                               # seconds between GKG requests (no published limit)
+GKG_MAX_FILES = 96                               # files per run: one day, about 0.4 GB
+GKG_FIRST = timedelta(hours=24)                  # the first run reads the last day
+GKG_LOOKBACK = timedelta(days=7)                 # later runs fill unread slots of the last week by default
 SEBI_FEED = "https://www.sebi.gov.in/sebirss.xml"   # the only address on SEBI's site ever asked for
 CENTRAL_BANK_FEEDS = {   # the only address on each central bank's site ever asked for (ADR-010)
     "fed_monetary_feed": "https://www.federalreserve.gov/feeds/press_monetary.xml",
@@ -143,6 +159,10 @@ def _check_host(url):
     if host == MOSPI_HOST and (parts.path not in MOSPI_PATHS or parts.fragment or parts.netloc != host):
         raise FetchError(f"{_shown(url)!r} is not an allowed address: only MoSPI's CPI, IIP and national accounts"
                          " data are read (ADR-009)")
+    if host == GKG_HOST and (parts.netloc != host or parts.query or parts.fragment
+                             or (url != GKG_LASTUPDATE and not GKG_PATH.match(parts.path))):
+        raise FetchError(f"{_shown(url)!r} is not an allowed address: only GDELT's lastupdate.txt and GKG files are"
+                         " read (ADR-013)")
 
 
 def ecb_root():
@@ -505,3 +525,95 @@ def fetch_release_calendar(conn, client, release_id, out_dir, raw_dir=None):
     except ArtifactError:
         return {"dates_listed": len(dates), "note": "identical to an answer already stored - nothing new",
                 "problems": []}
+
+
+# ---- GDELT's GKG files (ADR-013) ---------------------------------------------------------------------
+
+class GkgClient:
+    """Asks data.gdeltproject.org no closer together than GKG_INTERVAL. HTTP 200 and 404 (not yet published) are
+    answers; any other status stops the run - nothing more is asked."""
+
+    def __init__(self, get=http_get, sleep=time.sleep, clock=time.monotonic,
+                 now=lambda: datetime.now(timezone.utc)):
+        self.get, self.sleep, self.clock, self.now = get, sleep, clock, now
+        self.last = None
+        self.requests = 0
+        self.gave_up = False
+
+    def fetch(self, url):
+        """(status, body, retrieved_at) with status 200 or 404, or FetchError."""
+        if self.gave_up:
+            raise RateLimited("GDELT refused earlier in this run, so it was not asked again - try again later")
+        if self.last is not None and self.clock() - self.last < GKG_INTERVAL:
+            self.sleep(GKG_INTERVAL - (self.clock() - self.last))
+        self.last = self.clock()
+        self.requests += 1
+        status, body = self.get(url)
+        retrieved = self.now()
+        if status not in (200, 404):
+            self.gave_up = True
+            raise (RateLimited if status == 429 else FetchError)(
+                f"GDELT answered HTTP {status} for {_shown(url)} - stopped; nothing more asked in this run")
+        return status, body, retrieved
+
+
+def _slot_floor(moment):
+    moment = moment.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    return moment.replace(minute=moment.minute - moment.minute % 15)
+
+
+def gkg_slots(conn, now, start=None, newest=None):
+    """The 15-minute slots to ask for, oldest first: those not read yet from start to the newest slot at least
+    75 minutes old (and not after the newest GDELT lists). Without start: the last day on the first run, later
+    from the first slot read, but no further back than a week."""
+    latest = _slot_floor(now - GKG_MIN_AGE)
+    if newest is not None:
+        latest = min(latest, newest)
+    if start is None:
+        first = conn.execute("SELECT MIN(slot_at) FROM gk_files").fetchone()[0]
+        start = now - GKG_FIRST if first is None else max(parse_timestamp(first), now - GKG_LOOKBACK)
+    slot = _slot_floor(start)
+    if slot < start.astimezone(timezone.utc):
+        slot += GKG_SLOT
+    stored = {r[0] for r in conn.execute("SELECT slot_at FROM gk_files WHERE slot_at >= ?", [slot.isoformat()])}
+    due = []
+    while slot <= latest:
+        if slot.isoformat() not in stored:
+            due.append(slot)
+        slot += GKG_SLOT
+    return due
+
+
+def fetch_gkg(conn, client, start=None, max_files=GKG_MAX_FILES):
+    """Read GDELT's lastupdate.txt, then the GKG files of the slots due (oldest first, at most max_files), storing
+    each file's India-relevant rows (ADR-013). A refused file stores nothing and the run goes on; a refusal by
+    GDELT stops the run. Returns a report."""
+    status, body, _ = client.fetch(GKG_LASTUPDATE)
+    if status != 200:
+        raise FetchError(f"GDELT's lastupdate.txt answered HTTP {status} - nothing asked further")
+    listed = read_lastupdate(body)
+    newest = max(slot_of(name) for name in listed)
+    due = gkg_slots(conn, client.now(), start, newest)
+    report = {"due": len(due), "asked": 0, "read": 0, "kept": 0, "already_read": 0, "not_yet": [], "refused": [],
+              "megabytes": 0.0, "left": max(0, len(due) - max_files), "problems": []}
+    for slot in due[:max_files]:
+        name = file_name_for(slot)
+        status, body, retrieved = client.fetch(GKG_BASE + name)
+        report["asked"] += 1
+        if status == 404:
+            report["not_yet"].append(name)
+            continue
+        report["megabytes"] += len(body) / 1e6
+        try:
+            result = load_gkg(conn, name, body, retrieved, md5_listed=listed[name][1] if name in listed else None)
+        except GkgFileError as e:
+            report["refused"].append(f"{name}: {e}")
+            continue
+        if "note" in result:
+            report["already_read"] += 1
+            continue
+        report["read"] += 1
+        report["kept"] += result["kept"]
+        report["problems"] += result["problems"]
+    report["megabytes"] = round(report["megabytes"], 1)
+    return report

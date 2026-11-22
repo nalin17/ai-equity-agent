@@ -36,6 +36,12 @@ Commands:
   show-evidence [SYMBOL|ISIN] [FROM] [TO] [--replay]  everything known now as one kind of evidence
                             (Knowledge/Event Hub): counts per domain, the newest items and what is
                             missing and why - ADR-012
+  fetch-gkg [--from YYYY-MM-DD] [--max N]  read GDELT's 15-minute GKG files not read yet (default: the
+                            last day, then unread slots of the last week; at most N files, default 96 =
+                            one day, about 0.4 GB) and keep their India-relevant headlines - ADR-013
+  show-sentiment SYMBOL [FROM] [TO] [--replay]  the company's public-sentiment evidence as known now:
+                            liquidity gate, filings with a direction, sentiment-eligible headlines, and
+                            what was left out and why - ADR-013
   ingest-inbox [--without-listing] [FOLDER]  move NSE downloads from FOLDER (default: your Downloads)
                             into data/inbox, then load every new file in the right order (also the
                             FII/DII files fii-dii-nse-latest.csv and fii-dii-combined-latest.csv)
@@ -50,8 +56,9 @@ retrieval time: it is the moment the data verifiably entered this system
 
 News is the one exception: fetch-news asks GDELT, whose terms allow automated use
 (ADR-005), fetch-sebi reads SEBI's one RSS feed (ADR-006), fetch-macro asks FRED's API
-with your own key (ADR-008), fetch-india asks MoSPI's API (ADR-009), and fetch-events reads
-three central banks' feeds and FRED's release calendar (ADR-010) - nothing else.
+with your own key (ADR-008), fetch-india asks MoSPI's API (ADR-009), fetch-events reads
+three central banks' feeds and FRED's release calendar (ADR-010), and fetch-gkg reads GDELT's
+GKG files (ADR-013) - nothing else.
 Article links are never opened.
 """
 import sys
@@ -71,6 +78,7 @@ from ingestion.macro_context import sync_series  # noqa: E402
 from ingestion.india_macro import ATTRIBUTION, india_latest, india_observations, india_series_info  # noqa: E402
 from ingestion.india_macro import registered_india_series, requests_to_fetch, sync_india_series  # noqa: E402
 from core.calendars import load_calendars  # noqa: E402
+from ingestion.gdelt_gkg import GkgFileError, extract as extract_gkg  # noqa: E402
 from ingestion.gdelt_news import ENTITY_RULE, extract, stories, sync_news_names  # noqa: E402
 from ingestion.gdelt_news import DEDUP_RULE as NEWS_DEDUP_RULE  # noqa: E402
 from ingestion.market_adapters import ingest_market_file, retry_quarantined  # noqa: E402
@@ -79,6 +87,7 @@ from ingestion.news_fetch import FRED_INTERVAL, FetchError, FredClient, RateLimi
 from ingestion.news_fetch import fred_key  # noqa: E402
 from ingestion.news_fetch import MOSPI_INTERVAL, MospiClient, fetch_india_request  # noqa: E402
 from ingestion.news_fetch import CENTRAL_BANK_FEEDS, TooSoon, fetch_central_bank, fetch_release_calendar  # noqa: E402
+from ingestion.news_fetch import GKG_INTERVAL, GKG_MAX_FILES, GkgClient, fetch_gkg  # noqa: E402
 from ingestion.macro_events import ATTRIBUTION as EVENTS_ATTRIBUTION, CALENDAR_RELEASES, macro_events  # noqa: E402
 from ingestion.macro_events import scheduled_releases, sync_declared_events  # noqa: E402
 from ingestion.event_routes import sync_routes  # noqa: E402
@@ -89,7 +98,9 @@ from ingestion.nse_financial_results import load_results_index, load_results_xbr
 from ingestion.nse_financial_results import IST  # noqa: E402
 from ingestion.sebi_releases import ENTITY_RULE as SEBI_ENTITY_RULE, KINDS_RULE, releases  # noqa: E402
 from ingestion.source_registry import list_sources, sync_sources  # noqa: E402
+from knowledge.evidence import Domain  # noqa: E402
 from knowledge.hub import gather  # noqa: E402
+from knowledge.sentiment import liquidity  # noqa: E402
 from provenance.availability import PitClaim, parse_timestamp  # noqa: E402
 from universe.entities import resolve  # noqa: E402
 from universe.equity_list import load_equity_list  # noqa: E402
@@ -783,6 +794,81 @@ def show_evidence(args):
     conn.close()
 
 
+def fetch_gkg_files(args):
+    usage = "Usage: python manage.py fetch-gkg [--from YYYY-MM-DD] [--max N]"
+    options, i = {}, 0
+    while i < len(args):
+        if args[i] in ("--from", "--max") and i + 1 < len(args):
+            options[args[i]] = args[i + 1]
+            i += 2
+        else:
+            raise SystemExit(usage)
+    start = None
+    if "--from" in options:
+        day = strict_iso_date(options["--from"])
+        start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    limit = options.get("--max", str(GKG_MAX_FILES))
+    if not limit.isdigit() or not 1 <= int(limit) <= 960:
+        raise SystemExit("--max must be a whole number from 1 to 960 (ten days)")
+    log = setup_logging()
+    conn = open_db()
+    added = sync_news_names(conn)
+    if added:
+        log.info("News names newly recorded: %s", ", ".join(added))
+    run_in_transaction(conn, extract_gkg)   # stored headlines read again if the news names changed
+    client = GkgClient()
+    log.info("Reading GDELT's GKG files - at least %.0f seconds between requests", GKG_INTERVAL)
+    try:
+        result = fetch_gkg(conn, client, start, int(limit))
+    except (FetchError, GkgFileError) as e:   # files already read stay stored; the next run goes on from there
+        conn.close()
+        raise SystemExit(f"STOPPED - {type(e).__name__}: {e}")
+    problems = result.pop("problems")
+    not_yet, refused = result.pop("not_yet"), result.pop("refused")
+    log.info("GKG: %s", result)
+    for problem in problems[:10]:
+        print(f"     {problem}")
+    if not_yet:
+        print(f"  not published yet (asked again next run): {len(not_yet)} - {', '.join(n[:12] for n in not_yet[:5])}")
+    for line in refused:
+        print(f"  REFUSED (nothing stored): {line}")
+    if result["left"]:
+        print(f"  {result['left']} more files are due - run fetch-gkg again")
+    log.info("GDELT requests: %s. News data: The GDELT Project, gdeltproject.org", client.requests)
+    conn.close()
+
+
+def show_sentiment(args):
+    usage = "Usage: python manage.py show-sentiment SYMBOL [FROM] [TO] [--replay]"
+    claim = PitClaim.HISTORICAL_REPLAY if "--replay" in args else PitClaim.CURRENT_DECISION
+    args = [a for a in args if a != "--replay"]
+    if not args or len(args) > 3 or any(a.startswith("--") for a in args):
+        raise SystemExit(usage)
+    now = datetime.now(timezone.utc)
+    conn = open_db()
+    isin = resolve(conn, args[0], now.astimezone(IST).date().isoformat())
+    bundle = gather(conn, now, claim, isin, *[strict_iso_date(d).isoformat() for d in args[1:]])
+    gate = liquidity(conn, isin, now, claim)
+    sys.stdout.reconfigure(errors="replace")
+    print(f"Public sentiment for {args[0]} ({isin}), {bundle.start} to {bundle.end}, as known now ({claim.value};"
+          f" hub {bundle.hub_version}). Evidence, never advice; polarity is not scored yet (Stage 12B).")
+    print(f"  liquidity: {'admitted' if gate['admitted'] else 'REFUSED'} - {gate['reason']} (rule {gate['rule']})")
+    for e in sorted(bundle.of(Domain.PUBLIC_SENTIMENT), key=lambda x: (x.observed, x.evidence_id)):
+        print(f"  {e.observed}  {e.kind:<16} {str(e.value)[:90]}")
+    gkg = [e for e in bundle.of(Domain.NEWS_EXTERNAL) if e.source_id == "gdelt_gkg"]
+    print(f"  headline stories naming it: {len(gkg)} (sentiment-eligible:"
+          f" {sum(e.details['sentiment_eligible'] for e in gkg)}); headlines: GDELT Project, gdeltproject.org")
+    for e in sorted(gkg, key=lambda x: (x.observed, x.evidence_id))[-5:]:
+        mark = "eligible" if e.details["sentiment_eligible"] else "attention only"
+        print(f"      {e.observed}  {mark:<14} {str(e.value)[:80]}")
+    print("Not given, and why:")
+    for g in bundle.gaps_of(Domain.PUBLIC_SENTIMENT) + [g for g in bundle.gaps_of(Domain.NEWS_EXTERNAL)
+                                                        if g.component == "GKG headlines"]:
+        print(f"  {g.domain.value} - {g.nature.value} - {g.component}: {g.reason}"
+              + (f" ({g.count})" if g.count is not None else "") + (": " + ", ".join(g.items[:3]) if g.items else ""))
+    conn.close()
+
+
 def fetched_dir():
     return PROJECT_ROOT / load_config()["paths"]["data_dir"] / "fetched"
 
@@ -933,6 +1019,8 @@ COMMANDS = {
     "show-macro-events": show_macro_events,
     "show-flows": show_flows,
     "show-evidence": show_evidence,
+    "fetch-gkg": fetch_gkg_files,
+    "show-sentiment": show_sentiment,
     "ingest-inbox": ingest_inbox_files,
     "checklist": make_checklist,
     "report": report,

@@ -13,15 +13,22 @@ Rules it follows:
   it, because their dates were known in advance.
 - For a security: its prices, reported figures, announcements (one release = one event), corporate actions,
   SEBI releases naming it, news stories proven to name it (a story only returned by a search for it is left
-  out - 4B rule 3) and the events without an issuer that reach it through declared, recorded routes (4A rule 5).
+  out - 4B rule 3), GKG headline stories naming it, and the events without an issuer that reach it through
+  declared, recorded routes (4A rule 5).
+- Public sentiment for a security (40B step 10, 4B; ADR-013): only above the liquidity band (rule se-liquidity-1;
+  below it refused, never down-weighted - 4B.2 rule 1); the company's own filings with a direction readable from
+  NSE's subject (an-direction-1) and the headline stories that make it their subject and do not restate a price
+  move (se-eligible-1, se-echo-1). Polarity is not scored yet (Stage 12B); no filing and no headline is a recorded
+  gap, never neutral (4B.5). GDELT's whole-article tone is given with the news story, never as sentiment.
 - For everyone: context - FRED and MoSPI series, the FII/DII flows, central-bank, data-release, regulation and
   declared events, and the release calendar. Context is never attributed to a security (3G); an event that
   reaches the security by a route appears once, as routed, not again as context (4B rule 5: one vote).
-- Whatever cannot be given is said, as a gap (4E, 30A.2): domains with no adapter yet (public sentiment,
-  derivatives positioning, alternative data), evidence withheld for want of proven availability, trading days
-  with no file, a component that could not run, and what was deliberately left out.
+- Whatever cannot be given is said, as a gap (4E, 30A.2): domains with no adapter yet (derivatives positioning,
+  alternative data), evidence withheld for want of proven availability, trading days with no file, 15-minute GKG
+  files not read, a component that could not run, and what was deliberately left out.
 """
-from datetime import timedelta
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from core.calendars import CalendarError, load_calendars
@@ -29,6 +36,8 @@ from core.dates import strict_iso_date
 from data_quality.extraction_confidence import ExtractionConfidence
 from data_quality.missing_data import MissingClass
 from ingestion.event_routes import events_for
+from ingestion.gdelt_gkg import MIN_AGE as GKG_MIN_AGE, SLOT as GKG_SLOT, SOURCE_ID as GKG, GkgNotReadError
+from ingestion.gdelt_gkg import stored_slots, stories as gkg_stories
 from ingestion.gdelt_news import NewsNotReadError, stories
 from ingestion.india_macro import (SOURCE_ID as MOSPI, india_latest, india_observations, india_series_info,
                                    registered_india_series)
@@ -39,15 +48,16 @@ from ingestion.nse_financial_results import IST
 from ingestion.nse_flows import CALENDAR, SCOPE_TITLES, STATUS, UNIT, flows, missing_days
 from ingestion.sebi_releases import releases
 from knowledge.evidence import Attribution, Bundle, Domain, Evidence, EvidenceGap, GapNature, withheld
+from knowledge.sentiment import (CONFLICTING, DIRECTION_RULE, ECHO_RULE, ELIGIBILITY_RULE, NEGATIVE, POSITIVE,
+                                 PRICE_ECHO, UNKNOWN, eligibility, filing_direction, liquidity)
 from provenance.availability import Availability, PitClaim, disposition, parse_timestamp, price_availability
 from provenance.pit_store import fact_as_of
 from universe.entities import validate_isin
 
-HUB_VERSION = "hub-1"
+HUB_VERSION = "hub-2"
 DEFAULT_DAYS = 30
 FRED, FRED_CALENDAR = "fred_alfred", "fred_release_calendar"
 NOT_BUILT = {
-    Domain.PUBLIC_SENTIMENT: "no adapter yet - 40B step 10 (4B); news stories are given, their tone is not",
     Domain.DERIVATIVES_POSITIONING: "no adapter yet (3D) - no licensed source of F&O positioning has been approved",
     Domain.ALTERNATIVE_DATA: "deferred by the architecture (3B rule 2)",
 }
@@ -262,6 +272,118 @@ def _news(ctx):
                                     count=searched_only))
 
 
+def _utc_midnight(day):
+    """00:00 India time of a YYYY-MM-DD day, as a UTC timestamp."""
+    d = strict_iso_date(day)
+    return datetime(d.year, d.month, d.day, tzinfo=IST).astimezone(timezone.utc)
+
+
+def _gkg(ctx):
+    """GKG headline stories naming the security (attention-eligible, 4B.4), each with its sentiment eligibility;
+    and the window's 15-minute GKG files that were not read - their headlines are unknown, never 'no news'."""
+    since = _utc_midnight(ctx.start)
+    try:
+        found = gkg_stories(ctx.conn, ctx.decision, ctx.isin, ctx.claim, since=since.isoformat())
+    except GkgNotReadError as e:
+        ctx.gaps.append(EvidenceGap(Domain.NEWS_EXTERNAL, GapNature.DEGRADED, "GKG headlines", str(e)))
+        return
+    ctx.headlines = []
+    for story in found:
+        day = _day(story["published_at"])
+        if not _inside(ctx, day):
+            continue
+        eligible, reason = eligibility(story)
+        ctx.headlines.append((story, eligible, reason, day))
+        _add(ctx, evidence_id=f"gk_articles:{story['story_id']}", domain=Domain.NEWS_EXTERNAL, kind="news_story",
+             subject=ctx.isin, attribution=Attribution.DIRECT, observed=day,
+             available_at=_basis(ctx, story["retrieved_at"], story["published_at"]), value=story["headline"],
+             unit=None, source_id=GKG, extraction_confidence=story["extraction_confidence"],
+             details={"role": story["role"], "copies": len(story["copies"]), "sites": story["sites"],
+                      "attention_eligible": True, "sentiment_eligible": eligible, "eligibility": reason,
+                      "article_tone": story["article_tone"],
+                      "article_tone_is": "GDELT's tone of the whole article - never sentiment toward the company (4B.5)",
+                      "entity_rule": story["entity_rule"], "dedup_rule": story["dedup_rule"]})
+    until = min(_utc_midnight(ctx.end) + timedelta(days=1), ctx.decision - GKG_MIN_AGE)
+    expected, slot = [], since
+    while slot + GKG_SLOT <= until:
+        expected.append(slot)
+        slot += GKG_SLOT
+    have = stored_slots(ctx.conn, ctx.decision, ctx.claim, since.isoformat(), until.isoformat())
+    missing = [s for s in expected if s.isoformat() not in have]
+    if missing:
+        ctx.gaps.append(EvidenceGap(Domain.NEWS_EXTERNAL, GapNature.MISSING, "GKG headlines",
+                                    "15-minute GKG files of the window not read - their headlines are unknown, never"
+                                    f" 'no news' ({len(expected) - len(missing)} of {len(expected)} read)",
+                                    count=len(missing), items=[f"{s:%Y-%m-%d %H:%M} UTC" for s in missing[:SHOWN]],
+                                    missing_class=MissingClass.EXTRACTION_FAILURE))
+
+
+EXCLUDED_WHY = {
+    UNKNOWN: f"filings whose direction is only in the attached document - never guessed (rule {DIRECTION_RULE})",
+    CONFLICTING: f"releases whose subjects point both ways - never netted (rule {DIRECTION_RULE})",
+    PRICE_ECHO: f"exchange queries about the company's own price or volume - price echo (rule {DIRECTION_RULE})",
+    "headline": f"headlines that only mention the company or restate a price move - attention only (4B.4, rules"
+                f" {ELIGIBILITY_RULE}, {ECHO_RULE})",
+}
+
+
+def _sentiment(ctx):
+    """Public sentiment toward the security (40B step 10, 4B): refused below the liquidity band (4B.2 rule 1);
+    otherwise its own filings with a direction readable from the subject and the sentiment-eligible headlines.
+    Nothing is scored or averaged here; what is missing is said, never filled with neutral (4B.5)."""
+    gate = liquidity(ctx.conn, ctx.isin, ctx.decision, ctx.claim)
+    if not gate["admitted"]:
+        ctx.gaps.append(EvidenceGap(Domain.PUBLIC_SENTIMENT, GapNature.EXCLUDED, "sentiment",
+                                    f"{gate['reason']} (rule {gate['rule']})"))
+        return
+    band = {"rule": gate["rule"], "median_crore": gate["median_crore"], "sessions": gate["sessions"]}
+    found, excluded = 0, Counter()
+    for event in announcements(ctx.conn, ctx.decision, ctx.claim, isin=ctx.isin):
+        day = _day(event["published_at"])
+        if not _inside(ctx, day):
+            continue
+        direction = filing_direction(event["subjects"])
+        if direction not in (POSITIVE, NEGATIVE):
+            excluded[direction] += 1
+            continue
+        marks = ", ".join("?" * len(event["filings"]))
+        source, retrieved = ctx.conn.execute(
+            f"SELECT MIN(a.source_id), MIN(a.retrieved_at) FROM an_filings f JOIN raw_artifacts a"
+            f" ON a.artifact_id = f.artifact_id WHERE f.filing_id IN ({marks})", event["filings"]).fetchone()
+        _add(ctx, evidence_id=f"an_filings:{event['event_id']}:direction", domain=Domain.PUBLIC_SENTIMENT,
+             kind="filing_direction", subject=ctx.isin, attribution=Attribution.DIRECT, observed=day,
+             available_at=_basis(ctx, retrieved, event["published_at"]), value=direction, unit=None, source_id=source,
+             details={"subjects": sorted(event["subjects"]), "direction_rule": DIRECTION_RULE,
+                      "basis": "the company's own exchange filing, by NSE's subject", "liquidity": band})
+        found += 1
+    for story, eligible, reason, day in ctx.headlines or []:
+        if not eligible:
+            excluded["headline"] += 1
+            continue
+        _add(ctx, evidence_id=f"gk_articles:{story['story_id']}:sentiment", domain=Domain.PUBLIC_SENTIMENT,
+             kind="headline_story", subject=ctx.isin, attribution=Attribution.DIRECT, observed=day,
+             available_at=_basis(ctx, story["retrieved_at"], story["published_at"]), value=story["headline"],
+             unit=None, source_id=GKG, extraction_confidence=story["extraction_confidence"],
+             details={"polarity": "not scored - no scorer yet (Stage 12B)", "copies": len(story["copies"]),
+                      "sites": story["sites"], "eligibility": reason, "liquidity": band,
+                      "entity_rule": story["entity_rule"], "dedup_rule": story["dedup_rule"]})
+        found += 1
+    for key, count in sorted(excluded.items()):
+        ctx.gaps.append(EvidenceGap(Domain.PUBLIC_SENTIMENT, GapNature.EXCLUDED, "sentiment", EXCLUDED_WHY[key],
+                                    count=count))
+    if not found:
+        ctx.gaps.append(EvidenceGap(Domain.PUBLIC_SENTIMENT, GapNature.MISSING, "sentiment",
+                                    "no filing with a readable direction and no sentiment-eligible headline in the"
+                                    " window - missing, never neutral (4B.5)"))
+    ctx.gaps.append(EvidenceGap(Domain.PUBLIC_SENTIMENT, GapNature.DEGRADED, "headline polarity",
+                                "no scorer yet (FinBERT, Stage 12B) - eligible headlines are given unscored, never"
+                                " as neutral"))
+    ctx.gaps.append(EvidenceGap(Domain.PUBLIC_SENTIMENT, GapNature.DEGRADED, "sentiment features",
+                                "level, change, velocity, dispersion, novelty, crowding, source quality and spam"
+                                " likelihood are not computed - missing, never zero (4B.5); abnormal velocity without"
+                                " a registered event cannot be flagged yet (4B.2 rule 3)"))
+
+
 def _event_fields(event):
     return dict(domain=Domain.NEWS_EXTERNAL, kind="macro_event", observed=event["happened_on"],
                 available_at=event["available_at"], value=event["title"], unit=None, source_id=event["source_id"],
@@ -365,7 +487,8 @@ def _flows(ctx):
                                     missing_class=gaps[0]["missing_class"]))
 
 
-SECURITY = (_prices, _figures, _announcements, _corporate_actions, _sebi_named, _news, _routed_events)
+SECURITY = (_prices, _figures, _announcements, _corporate_actions, _sebi_named, _news, _gkg, _routed_events,
+            _sentiment)
 CONTEXT = (_macro_events, _schedule, _fred, _mospi, _flows)
 
 
@@ -380,7 +503,7 @@ def gather(conn, decision_time, claim=PitClaim.CURRENT_DECISION, isin=None, star
             raise ValueError(f"{isin} is not a known entity")
     s, e, note = clamp_window(start, end, decision)
     ctx = SimpleNamespace(conn=conn, decision=decision, claim=claim, isin=isin, start=s, end=e, evidence=[],
-                          gaps=[], routed=set())
+                          gaps=[], routed=set(), headlines=None)
     for adapter in (SECURITY if isin else ()) + CONTEXT:
         adapter(ctx)
     ctx.gaps += [EvidenceGap(d, GapNature.NOT_BUILT, d.value, why) for d, why in NOT_BUILT.items()]
